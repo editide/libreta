@@ -118,6 +118,25 @@ public class HtmlExportTests
   }
 
   [Fact]
+  public void CarriesALineNoViewPresentsOnAViewOfItsOwn()
+  {
+    // Arrange
+    using StoreFixture fixture = Fixture("analysis");
+    fixture.Write("analysis/formulas.yaml", "formulas:\n  doubled:\n    formula: revenue * 2\n");
+
+    // Act
+    string html = HtmlExport.Build(fixture.Root, fixture.Assets);
+
+    // Assert
+    JsonElement snapshot = Snapshot(html);
+    snapshot.GetProperty("lines").GetProperty("analysis.doubled").GetProperty("view").GetString()
+      .ShouldBe("line:analysis.doubled");
+    snapshot.GetProperty("views").GetProperty("line:analysis.doubled").GetProperty("rows")
+      .EnumerateArray().Select(row => row.GetProperty("name").GetString())
+      .ShouldBe(["analysis.doubled", "", "analysis.revenue"]);
+  }
+
+  [Fact]
   public void RefusesABookThatFailsToLoad()
   {
     // Arrange

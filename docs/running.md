@@ -40,8 +40,24 @@ libreta books/spacex --cell historical.segments.connectivity_revenue 2025
 ```
 
 The page shows the first view in navigation order that presents the cell, or failing that the line; a tool linking to the book, such as a slide deck tracing a number, runs this.
+A line no view presents opens on a page of its own, above the lines its formula reads, as does one listed under **Used by** in the inspector.
 When a server already runs the book with a page open, that page selects the cell instead of a new tab opening.
 Browsers keep a page from bringing its own tab forward, so a page in a background tab selects the cell there.
+
+A tool that can bring a tab forward, such as a page whose click opened the book's tab, opens the page itself:
+
+```bash
+libreta books/spacex --cell historical.segments.connectivity_revenue 2025 --no-open --json
+```
+
+`--no-open` opens no tab, starting a server if none runs, and `--json` prints one line with the page's address at the cell and how many open pages selected it:
+
+```json
+{"url":"http://localhost:5173/?view=historical%2Fsegments&line=historical.segments.connectivity_revenue&column=2025","pages":1}
+```
+
+A server started with `--no-open` stops ten seconds later if no page has connected.
+A served page in a frame, such as a book a deck slides in over its slides, selects the cell too, without taking focus from the page around it.
 
 The server stops about ten seconds after its last tab closes, long enough for a reload to reconnect.
 It keeps running until a first tab connects, and `Ctrl+C` stops it at any time.
@@ -96,7 +112,7 @@ Print the engine's exact, unrounded value for one presented cell:
 libreta books/spacex --value dcf value_per_share Value
 ```
 
-Print several lines by qualified name, each over every period its folder has, whether or not a view presents it:
+Print several lines by qualified name, each over every period its folder has and then every column formula that applies to it, whether or not a view presents it:
 
 ```bash
 libreta books/spacex --lines historical.segments.connectivity_revenue historical.segments.connectivity_share_of_revenue
@@ -155,8 +171,9 @@ The page carries every view, its calculations and provenance, and the source ima
 It is a snapshot: it never reloads, and the status bar shows the date it was exported.
 The export refuses a book with a view that fails to load, rather than sharing a broken page.
 
-A link opens the page at a cell in its fragment, as `spacex.html#line=historical.segments.connectivity_revenue&column=2025`, choosing the view as `--cell` does.
+A link opens the page at a cell in its fragment, as `spacex.html#line=historical.segments.connectivity_revenue&column=2025`, choosing the view as `--cell` does, a line no view presents included.
 Changing the fragment of a page already open selects the new cell, so a page embedding the export in a frame can follow each link without reloading the book.
+In a frame, the page, exported or served, starts with its navigation hidden, without changing the choice a page outside one remembers, and Escape tells the page around it, as the message `{ libreta: 'escape' }`, unless a dialog or menu is open, so that page can close the book.
 
 The export icon at the foot of the navigation downloads this page or the [workbook](#export-a-workbook) from the running server, built from the book as it stands on disk.
 An exported page has no Export button, since it has no server to build one.

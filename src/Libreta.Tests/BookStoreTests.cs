@@ -44,6 +44,26 @@ public class BookStoreTests
   }
 
   [Fact]
+  public void ServesALineNoTableShowsOnItsOwn()
+  {
+    // Arrange
+    using var fixture = new StoreFixture("analysis");
+    fixture.Write("formats.yaml", "formats:\n  millions:\n    decimals: 0\n");
+    fixture.Write("analysis/formulas.yaml", "formulas:\n  doubled:\n    formula: revenue * 2\n");
+    using var store = new BookStore(fixture.Root, fixture.Assets);
+
+    // Act
+    bool found = store.TryGetView("line:analysis.doubled", out ViewPayload? payload);
+    bool unknown = store.TryGetView("line:analysis.missing", out _);
+
+    // Assert
+    found.ShouldBeTrue();
+    payload!.Error.ShouldBeNull();
+    payload!.Rows.Select(row => row.Name).ShouldBe(["analysis.doubled", "", "analysis.revenue"]);
+    unknown.ShouldBeFalse();
+  }
+
+  [Fact]
   public void CoalescesAFileSaveBurstIntoOneReload()
   {
     // Arrange

@@ -11,7 +11,8 @@ public record BookSnapshotPayload(
   DateTimeOffset Exported);
 
 /// <summary>The first view in navigation order presenting a line, and for each column a different view presents first,
-/// that view: what <c>--cell</c> would open, for a page with no server to ask.</summary>
+/// that view, or the line's own view when none presents it: what <c>--cell</c> would open, for a page with no server
+/// to ask.</summary>
 public record PresentedLine(string View, Dictionary<string, string>? Columns);
 
 /// <summary>The whole book as one serverless page: every payload embedded and the page's files inlined.</summary>
@@ -51,9 +52,17 @@ public static class HtmlExport
     {
       views[id] = PayloadBuilder.Build(view, new Engine(view), 1);
     }
+    Dictionary<string, PresentedLine> lines = PresentedLines(book);
+    // A line no view presents gets the page a server builds for it on request.
+    foreach (string line in book.Formulas.Keys.Concat(book.Facts.Keys).Where(line => !lines.ContainsKey(line)))
+    {
+      View view = View.ForLine(book, line);
+      views[view.Id] = PayloadBuilder.Build(view, new Engine(view), 1);
+      lines[line] = new PresentedLine(view.Id, null);
+    }
     Dictionary<string, string> images = BookStore.SourceImages(book)
       .ToDictionary(image => image, image => DataUri(Path.Combine(root, image)));
-    return new BookSnapshotPayload(catalog, views, images, PresentedLines(book), DateTimeOffset.Now);
+    return new BookSnapshotPayload(catalog, views, images, lines, DateTimeOffset.Now);
   }
 
   private static Dictionary<string, PresentedLine> PresentedLines(Book book)

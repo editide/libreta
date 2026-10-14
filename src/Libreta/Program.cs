@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Libreta;
 
@@ -140,10 +141,13 @@ if (!watched && registry.Find(root) is ServerInstance existing)
   }
   if (options.Cell is (string line, string column))
   {
-    return await SelectCell(existing, root, line, column);
+    return await SelectCell(existing, root, line, column, options);
   }
   Console.WriteLine($"  already serving {root} at {existing.Url}");
-  Browser.Open(existing.Url);
+  if (!options.NoOpen)
+  {
+    Browser.Open(existing.Url);
+  }
   return 0;
 }
 
@@ -186,10 +190,19 @@ using var viewers = new Viewers(TimeSpan.FromSeconds(10), () =>
   Console.WriteLine($"  stopped   {DateTime.Now:HH:mm:ss}  no page open");
   app.Lifetime.StopApplication();
 });
+if (options.NoOpen && !watched)
+{
+  viewers.Expect();
+}
 var pages = new Pages();
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// The page is served from source, and without a Cache-Control a browser reuses a script it judges fresh, running an
+// edited file's old version.
+app.UseStaticFiles(new StaticFileOptions
+{
+  OnPrepareResponse = file => file.Context.Response.Headers.CacheControl = "no-cache"
+});
 
 JsonSerializerOptions jsonOptions = PayloadJson.Options;
 app.MapGet("/api/catalog", () => Results.Text(
@@ -296,9 +309,13 @@ var instance = new ServerInstance(Environment.ProcessId, root, port);
 registry.Register(instance);
 try
 {
-  if (firstRun)
+  if (options.Cell is (string line, string column))
   {
-    Browser.Open(instance.Url + query);
+    ShowCell(instance.Url + query, 0, line, column, firstRun && !options.NoOpen, options.Json);
+  }
+  else if (firstRun && !options.NoOpen)
+  {
+    Browser.Open(instance.Url);
   }
   await app.WaitForShutdownAsync();
 }
@@ -315,7 +332,8 @@ static TextWriter Utf8Writer(Stream stream)
 
 /// <summary>Has the server's open page select a cell, or opens a tab at it when none is open. A server older than
 /// the request gets a tab regardless.</summary>
-static async Task<int> SelectCell(ServerInstance server, string root, string line, string column)
+static async Task<int> SelectCell(ServerInstance server, string root, string line, string column,
+  CommandLineOptions options)
 {
   using var client = new HttpClient();
   string url = $"{server.Url}/api/cell?line={Uri.EscapeDataString(line)}&column={Uri.EscapeDataString(column)}";
@@ -325,7 +343,7 @@ static async Task<int> SelectCell(ServerInstance server, string root, string lin
   {
     try
     {
-      Browser.Open(server.Url + CellLink.Query(root, line, column));
+      ShowCell(server.Url + CellLink.Query(root, line, column), 0, line, column, !options.NoOpen, options.Json);
       return 0;
     }
     catch (Exception exception) when (exception is ArgumentException or InvalidDataException)
@@ -340,15 +358,30 @@ static async Task<int> SelectCell(ServerInstance server, string root, string lin
     return 1;
   }
   CellAnswer answer = JsonSerializer.Deserialize<CellAnswer>(body, PayloadJson.Options)!;
-  if (answer.Pages == 0)
-  {
-    Browser.Open(server.Url + answer.Query);
-  }
-  else
-  {
-    Console.WriteLine($"  selected {line} in {column} on the page at {server.Url}");
-  }
+  ShowCell(server.Url + answer.Query, answer.Pages, line, column, !options.NoOpen, options.Json);
   return 0;
+}
+
+/// <summary>Opens a tab at the cell when no open page selected it, unless the caller opens the page itself, and says
+/// where the cell is; with --json, as one line a tool reads.</summary>
+static void ShowCell(string url, int pages, string line, string column, bool open, bool json)
+{
+  if (json)
+  {
+    var terminal = new JsonSerializerOptions(PayloadJson.Options)
+    {
+      Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+    Console.WriteLine(JsonSerializer.Serialize(new CellPage(url, pages), terminal));
+  }
+  else if (pages > 0)
+  {
+    Console.WriteLine($"  selected {line} in {column} on the page at {url}");
+  }
+  if (pages == 0 && open)
+  {
+    Browser.Open(url);
+  }
 }
 
 /// <summary>An explicit port fails if taken; a default steps upward. Releasing the probe before Kestrel binds is a
@@ -447,9 +480,31 @@ public class BookStore : IDisposable
   /// <summary>The last book that loaded, kept through a load that fails.</summary>
   public Book? Book => Volatile.Read(ref snapshot).Book;
 
+  /// <summary>A view of the book's, or a line no table shows, built on request since only a link reaches one.
+  /// </summary>
   public bool TryGetView(string id, out ViewPayload? payload)
   {
-    return Volatile.Read(ref snapshot).Views.TryGetValue(id, out payload);
+    BookSnapshot current = Volatile.Read(ref snapshot);
+    if (current.Views.TryGetValue(id, out payload))
+    {
+      return true;
+    }
+    string line = id.StartsWith(View.LinePrefix, StringComparison.Ordinal) ? id[View.LinePrefix.Length..] : "";
+    if (current.Book is not Book book || !(book.Formulas.ContainsKey(line) || book.Facts.ContainsKey(line)))
+    {
+      return false;
+    }
+    long built = current.Catalog.Version;
+    try
+    {
+      View view = View.ForLine(book, line);
+      payload = PayloadBuilder.Build(view, new Engine(view), built);
+    }
+    catch (Exception exception)
+    {
+      payload = new ViewPayload { Title = line, Error = exception.Message, Version = built };
+    }
+    return true;
   }
 
   public bool TryGetSourceImage(string image, out string? path, out string? contentType)

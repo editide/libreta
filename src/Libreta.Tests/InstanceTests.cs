@@ -119,6 +119,20 @@ public class InstanceTests
   }
 
   [Fact]
+  public void StopsWhenNoFirstPageComesAfterAnOpeningLeftToTheCaller()
+  {
+    // Arrange
+    using var stopped = new ManualResetEventSlim();
+    using var viewers = new Viewers(Grace, stopped.Set);
+
+    // Act
+    viewers.Expect();
+
+    // Assert
+    stopped.Wait(Patience).ShouldBeTrue();
+  }
+
+  [Fact]
   public void CountsThePagesHoldingTheStreamOpen()
   {
     // Arrange

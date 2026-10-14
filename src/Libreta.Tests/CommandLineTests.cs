@@ -154,6 +154,35 @@ public class CommandLineTests
   }
 
   [Fact]
+  public void ParsesACellForAToolThatOpensThePageItself()
+  {
+    // Arrange
+    string[] arguments = ["books/spacex", "--cell", "historical.segments.ai_revenue", "2025", "--no-open", "--json"];
+
+    // Act
+    CommandLineOptions options = CommandLineOptions.Parse(arguments);
+
+    // Assert
+    options.Cell.ShouldBe(("historical.segments.ai_revenue", "2025"));
+    options.NoOpen.ShouldBeTrue();
+    options.Json.ShouldBeTrue();
+  }
+
+  [Fact]
+  public void NoOpenCannotCombineWithAHeadlessCommand()
+  {
+    // Arrange
+    string[] arguments = ["books/spacex", "--check", "--no-open"];
+
+    // Act
+    ArgumentException exception = Should.Throw<ArgumentException>(() => CommandLineOptions.Parse(arguments));
+
+    // Assert
+    exception.Message.ShouldBe("--no-open leaves the server's page to the caller, so it cannot be combined with a " +
+      "headless command.");
+  }
+
+  [Fact]
   public void CellCannotCombineWithAHeadlessCommand()
   {
     // Arrange
@@ -193,6 +222,58 @@ public class CommandLineTests
 
     // Assert
     cell.ShouldBe(new RequestedCell("statement", "statement.gross_profit", "2025"));
+  }
+
+  [Fact]
+  public void ACellLinkToALineNoViewPresentsOpensTheLineOnItsOwn()
+  {
+    // Arrange
+    using var fixture = new ViewFixture();
+    fixture.WriteStatement();
+    fixture.Write("statement/formulas.yaml", """
+      formulas:
+        gross_profit:
+          formula: revenue - cost_of_revenue
+        gross_margin:
+          label: Gross margin
+          formula: gross_profit / revenue
+      """);
+    Book book = Book.Load(fixture.Root);
+
+    // Act
+    RequestedCell cell = CellLink.Resolve(book, "statement.gross_margin", "2025");
+
+    // Assert
+    cell.ShouldBe(new RequestedCell("line:statement.gross_margin", "statement.gross_margin", "2025"));
+  }
+
+  [Fact]
+  public void ALineOnItsOwnShowsItAboveTheLinesItReads()
+  {
+    // Arrange
+    using var fixture = new ViewFixture();
+    fixture.WriteStatement();
+    fixture.Write("statement/formulas.yaml", """
+      formulas:
+        gross_profit:
+          formula: revenue - cost_of_revenue
+        gross_margin:
+          label: Gross margin
+          formula: gross_profit / revenue
+      """);
+    Book book = Book.Load(fixture.Root);
+
+    // Act
+    Libreta.View view = Libreta.View.ForLine(book, "statement.gross_margin");
+    ViewPayload payload = PayloadBuilder.Build(view, new Engine(view), 1);
+
+    // Assert
+    view.Id.ShouldBe("line:statement.gross_margin");
+    payload.Title.ShouldBe("Gross margin");
+    payload.Columns.Select(column => column.Name).ShouldBe(["2024", "2025"]);
+    payload.Rows.Select(row => row.Name)
+      .ShouldBe(["statement.gross_margin", "", "statement.gross_profit", "statement.revenue"]);
+    payload.Rows[1].Label.ShouldBe("Reads");
   }
 
   [Fact]
@@ -957,6 +1038,35 @@ public class CommandLineTests
     missing.GetProperty("error").GetString().ShouldBe("Unknown line 'historical.segments.missing'.");
     missing.TryGetProperty("exact", out _).ShouldBeFalse();
     document.RootElement[1].GetProperty("exact").GetArrayLength().ShouldBe(2);
+  }
+
+  [Fact]
+  public void LinesReadTheCalculatedColumnsThatApplyToThemAfterTheirPeriods()
+  {
+    // Arrange
+    using LinesBookFixture fixture = new();
+    fixture.Write("historical/formulas.yaml", """
+      column_formulas:
+        growth:
+          label: Growth
+          formula: self["2025"] - self["2024"]
+          applies_to: facts
+      """);
+
+    // Act
+    (int exitCode, string output) = RunLines(
+      fixture.Root, ["historical.segments.connectivity", "historical.segments.total"], true);
+
+    // Assert
+    exitCode.ShouldBe(0);
+    using JsonDocument document = JsonDocument.Parse(output);
+    JsonElement connectivity = document.RootElement[0];
+    connectivity.GetProperty("columns").EnumerateArray().Select(column => column.GetString())
+      .ShouldBe(["2024", "2025", "growth"]);
+    connectivity.GetProperty("exact").EnumerateArray().Select(value => value.GetString())
+      .ShouldBe(["7.34", "11.5", "4.16"]);
+    document.RootElement[1].GetProperty("columns").EnumerateArray().Select(column => column.GetString())
+      .ShouldBe(["2024", "2025"]);
   }
 
   [Fact]

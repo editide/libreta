@@ -148,6 +148,19 @@ public class Viewers : IDisposable
     timer = new Timer(_ => Expire(stop), null, Timeout.Infinite, Timeout.Infinite);
   }
 
+  /// <summary>Counts down now rather than from a first page, for a server whose caller opens the page itself and
+  /// may never do so.</summary>
+  public void Expect()
+  {
+    lock (gate)
+    {
+      if (count == 0 && !disposed)
+      {
+        timer.Change(grace, Timeout.InfiniteTimeSpan);
+      }
+    }
+  }
+
   public IDisposable Connect()
   {
     lock (gate)

@@ -56,6 +56,8 @@ public class Formula
 public class ColumnFormula
 {
   public string Name { get; set; } = "";
+  /// <summary>The name as written in its file, which a reference resolves from any scope it covers.</summary>
+  public string Key { get; set; } = "";
   public string Label { get; set; } = "";
   public string Scope { get; set; } = "";
   public Expr Expression { get; set; } = null!;
@@ -169,6 +171,7 @@ public class Book
         Add(book.ColumnFormulas, name, new ColumnFormula
         {
           Name = name,
+          Key = entry.Key,
           Label = entry.Value.Label,
           Scope = scope,
           Expression = expression,
@@ -1053,6 +1056,9 @@ public class Book
 /// line names, so a nested view can reuse its parent's definitions without copying them.</summary>
 public class View
 {
+  /// <summary>Starts the id of a view <see cref="ForLine"/> makes for a line no table shows.</summary>
+  public const string LinePrefix = "line:";
+
   public Book Book { get; private init; } = null!;
   public string Id { get; private init; } = "";
   public string Scope { get; private init; } = "";
@@ -1089,6 +1095,43 @@ public class View
       Presentation = book.Presentations[id],
       Formatter = new Formatter(Formatter.Load(folder, book.Root, YamlFile.Deserializer()))
     };
+  }
+
+  /// <summary>A line no table shows, presented above the lines its formula reads, so a link to it has a page.
+  /// </summary>
+  public static View ForLine(Book book, string line)
+  {
+    string scope = book.Formulas.TryGetValue(line, out Formula? formula) ? formula.Scope : book.Facts[line].Scope;
+    string folder = book.FoldersByScope.GetValueOrDefault(scope) ?? book.Root;
+    var presentation = new ViewFile
+    {
+      Columns = book.PeriodsFor(scope).Select(period => new ViewColumn { Source = period }).ToList(),
+      Rows = { new ViewRow { Line = line } }
+    };
+    var view = new View
+    {
+      Book = book,
+      Id = $"{LinePrefix}{line}",
+      Scope = scope,
+      Presentation = presentation,
+      Formatter = new Formatter(Formatter.Load(folder, book.Root, YamlFile.Deserializer()))
+    };
+    presentation.Title = view.LabelOf(line);
+    presentation.Subtitle = "No table shows this line, so it stands here with the lines it reads.";
+    if (formula is not null)
+    {
+      List<string> inputs = new Engine(view).References(formula.Expression, null, scope, line)
+        .Select(reference => reference.Line)
+        .Where(input => input != line)
+        .Distinct()
+        .ToList();
+      if (inputs.Count > 0)
+      {
+        presentation.Rows.Add(new ViewRow { Label = "Reads" });
+        presentation.Rows.AddRange(inputs.Select(input => new ViewRow { Line = input }));
+      }
+    }
+    return view;
   }
 
   internal static View ForCheckScope(Book book, string folder)

@@ -30,6 +30,8 @@ class RequestCoordinator {
 
 // An exported page carries the catalog, every view and the source images in place of the server.
 const snapshot = readSnapshot();
+// A page in a frame, such as a slide deck tracing a number, starts on the table alone, live or exported.
+const embedded = window.parent !== window;
 const el = (id) => document.getElementById(id);
 // Held by reference: render() rebuilds the header row and re-appends it.
 const labelResizer = el('label-resizer');
@@ -47,7 +49,7 @@ let shortcutTimer = null;
 let inspectorDock = stored('inspectorDock') === 'bottom' ? 'bottom' : 'right';
 let uiScale = Number(stored('uiScale')) || 100;
 let theme = stored('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-let navigationVisible = stored('navigationVisible') !== 'false';
+let navigationVisible = !embedded && stored('navigationVisible') !== 'false';
 let checksExpanded = null;
 const requests = new RequestCoordinator();
 const branchStates = new Map();
@@ -123,7 +125,7 @@ function setTheme(next, persist = true) {
   if (persist) store('theme', theme);
 }
 
-function setNavigationVisible(visible, persist = true) {
+function setNavigationVisible(visible, persist = !embedded) {
   navigationVisible = visible;
   document.querySelector('.layout').classList.toggle('nav-hidden', !visible);
   const toggle = el('nav-toggle');
@@ -448,7 +450,11 @@ function expandAncestors(id) {
   }
 }
 
+// A line no table shows has a view of its own, which the server builds on request and an export carries.
+const LINE_VIEW = 'line:';
+
 function knownView(id) {
+  if (id?.startsWith(LINE_VIEW)) return !snapshot || Boolean(snapshot.views[id]);
   return catalog?.views.some((view) => view.id === id) ?? false;
 }
 
@@ -477,14 +483,14 @@ async function openView(id, replace = false, restored = null) {
 }
 
 // A followed reference is a step back undoes, even when it stays in the same view.
-async function followReference(view, line, column) {
+async function followReference(view, line, column, replace = false) {
   if (view && view !== activeView) {
-    await openView(view);
+    await openView(view, replace);
     return openCoordinate(line, column);
   }
   if (locate(line, column || null) === null) return false;
-  rememberHistoryEntry();
-  updateUrl(activeView, false);
+  if (!replace) rememberHistoryEntry();
+  updateUrl(activeView, replace);
   return openCoordinate(line, column);
 }
 
@@ -1809,16 +1815,16 @@ function renderPanel() {
   bindInspectorInputs(panel);
 }
 
-// A dependent no table shows has nowhere to open, so it is not a link.
+// A dependent no table shows opens on a view of its own.
 function renderDependents(dependents) {
   if (!dependents?.length) return '';
   const rows = dependents.map((dependent) => {
     const label = escapeHtml(dependent.label);
-    const name = dependent.hidden ? `<span class="dependent-hidden" title="Not shown in any table">${label}</span>`
-      : `<button type="button" class="dep" data-name="${escapeHtml(dependent.line)}" ` +
-        `data-column-key="${escapeHtml(dependent.column)}" ` +
-        `data-source-view="${escapeHtml(dependent.sourceView ?? '')}" ` +
-        `title="Open ${label} · ${escapeHtml(dependent.columnLabel)}">${label}</button>`;
+    const view = dependent.hidden ? `${LINE_VIEW}${dependent.line}` : dependent.sourceView ?? '';
+    const name = `<button type="button" class="dep${dependent.hidden ? ' dependent-hidden' : ''}" ` +
+      `data-name="${escapeHtml(dependent.line)}" data-column-key="${escapeHtml(dependent.column)}" ` +
+      `data-source-view="${escapeHtml(view)}" title="Open ${label} · ${escapeHtml(dependent.columnLabel)}` +
+      `${dependent.hidden ? ', which no table shows' : ''}">${label}</button>`;
     return `<tr><th>${name}</th><td class="dependent-column">${escapeHtml(dependent.columnLabel)}</td>` +
       `<td class="${escapeHtml(dependent.kind)}">${escapeHtml(dependent.value)}</td></tr>`;
   }).join('');
@@ -2538,6 +2544,12 @@ function isTypingTarget(target) {
     || target instanceof HTMLSelectElement || target.isContentEditable;
 }
 
+// A page showing an export in a frame, such as a slide deck tracing a number, takes Escape back unless a dialog or
+// menu claims it; the selected cell is what that page opened the book at, so clearing it is no reason to stay.
+function leavesEmbeddedBook(event, overlayOpen) {
+  return event.key === 'Escape' && !overlayOpen && !event.ctrlKey && !event.metaKey && !event.altKey;
+}
+
 function handleGlobalKeydown(event) {
   if (event.defaultPrevented || isTypingTarget(event.target)) return;
   if (el('shortcuts-dialog').open || el('source-image-dialog').open) return;
@@ -2661,8 +2673,10 @@ function connect() {
   source.addEventListener('assets', () => location.reload());
   source.addEventListener('cell', (event) => {
     const { view, line, column } = JSON.parse(event.data);
-    followReference(view, line, column);
-    window.focus();
+    // A frame's history is its page's too, where back should close the frame rather than step through cells sent to it.
+    followReference(view, line, column, embedded);
+    // A frame may be hidden over a page that keeps its keys, so only a page of its own takes focus.
+    if (!embedded) window.focus();
   });
   source.onerror = () => {
     el('dot').className = 'status-indicator down';
@@ -2766,6 +2780,13 @@ window.addEventListener('resize', () => {
   if (el('source-image-dialog').open) sizeSourceImageToFit();
 });
 document.addEventListener('keydown', handleGlobalKeydown);
+if (embedded) {
+  document.addEventListener('keydown', (event) => {
+    const overlayOpen = el('shortcuts-dialog').open || el('source-image-dialog').open ||
+      el('export-menu').matches(':popover-open');
+    if (leavesEmbeddedBook(event, overlayOpen)) window.parent.postMessage({ libreta: 'escape' }, '*');
+  }, true);
+}
 document.addEventListener('click', restoreGridFocusAfterClick);
 
 setupTooltips();

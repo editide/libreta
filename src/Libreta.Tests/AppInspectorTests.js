@@ -81,10 +81,10 @@ test('an expanded alias is written out in place of its own name, with nothing to
   assert.doesNotMatch(html, /formula-expand/);
 });
 
-test('the inspector lists what reads a cell, linking only the dependents a table displays', () => {
+test('the inspector lists what reads a cell, opening one no table shows on a view of its own', () => {
   const renderDependentsText = app.match(/function renderDependents\([\s\S]*?\n\}/)?.[0];
   assert.ok(renderDependentsText, 'app.js must define renderDependents');
-  const renderDependents = vm.runInNewContext(`(${renderDependentsText})`, { escapeHtml });
+  const renderDependents = vm.runInNewContext(`(${renderDependentsText})`, { escapeHtml, LINE_VIEW: 'line:' });
 
   const html = renderDependents([
     { line: 'a.doubled', column: '2023', label: 'Doubled', columnLabel: '2023', value: '200', kind: 'formula',
@@ -97,8 +97,7 @@ test('the inspector lists what reads a cell, linking only the dependents a table
   assert.equal(renderDependents(undefined), '');
   assert.match(html, /<h3>Used by<\/h3>/);
   assert.match(html, /<button type="button" class="dep" data-name="a\.doubled" data-column-key="2023" data-source-view="summary"/);
-  assert.match(html, /<span class="dependent-hidden"[^>]*>Helper<\/span>/);
-  assert.doesNotMatch(html, /data-name="a\.helper"/);
+  assert.match(html, /<button type="button" class="dep dependent-hidden" data-name="a\.helper" data-column-key="2023" data-source-view="line:a\.helper"/);
 });
 
 test('a date cell whose exact value is its display reads as matching', () => {
