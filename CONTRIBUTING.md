@@ -1,9 +1,12 @@
 # Contributing
 
-Libreta is shared as-is.
-Issues and pull requests are not reviewed, and there is no support or roadmap commitment.
+Libreta is early, and its direction can still change.
 
-Forking is encouraged.
-Take it in whatever direction suits you; the [license](LICENSE) asks only that you keep the `LICENSE` and `NOTICE` files with any copy you distribute.
+Issues are welcome: bugs, books that render wrong, and models the format can't express.
+There are no promises on timing.
 
-[Changing Libreta](README.md#changing-libreta) covers running a fork from source.
+Open an issue before a pull request, so we agree on the change before you write it.
+[AGENTS.md](AGENTS.md) holds the vocabulary and conventions, and [Changing Libreta](README.md#changing-libreta) covers running from source.
+As section 5 of the [license](LICENSE) says, a contribution you submit is licensed under Apache-2.0.
+
+Forks are welcome, and may keep the name and logo; see [NOTICE](NOTICE).

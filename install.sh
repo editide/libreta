@@ -1,9 +1,9 @@
 #!/bin/sh
 # Installs the latest Libreta release, which bundles its own runtime:
-#   curl -fsSL https://raw.githubusercontent.com/danielochoa94/libreta/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/editide/libreta/main/install.sh | sh
 set -eu
 
-release_url="${LIBRETA_RELEASE_URL:-https://github.com/danielochoa94/libreta/releases/latest/download}"
+release_url="${LIBRETA_RELEASE_URL:-https://github.com/editide/libreta/releases/latest/download}"
 application_directory="${LIBRETA_INSTALL_DIR:-${HOME}/.local/lib/libreta}"
 command_directory="${LIBRETA_BIN_DIR:-${HOME}/.local/bin}"
 

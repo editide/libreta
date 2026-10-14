@@ -1,6 +1,17 @@
 Libreta
 Copyright 2026 EDITIDE LLC
 
-Built by Daniel Ochoa at editide (https://editide.com).
+Licensed under the Apache License, Version 2.0; see LICENSE.
 
-The bundled Inter typeface is licensed under the SIL Open Font License 1.1; see src/Libreta/wwwroot/fonts/OFL.txt.
+The editide and Libreta names and logos, including src/Libreta/wwwroot/favicon.png, are trademarks of EDITIDE LLC.
+You may use them, in a fork included, as long as you do not present Libreta as your own work or suggest EDITIDE LLC
+made or endorses something it did not.
+
+Libreta includes or ships with the following, each under its own license:
+
+- Inter, the interface's font (src/Libreta/wwwroot/fonts), copyright 2016 The Inter Project Authors, under the SIL
+  Open Font License 1.1, in src/Libreta/wwwroot/fonts/OFL.txt.
+- The .NET runtime and ASP.NET Core, which release builds bundle, copyright the .NET Foundation and Contributors,
+  under the MIT License.
+- YamlDotNet, copyright Antoine Aubry and contributors, under the MIT License.
+- DocumentFormat.OpenXml, copyright Microsoft Corporation, under the MIT License.

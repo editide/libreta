@@ -3,7 +3,7 @@
 Spreadsheets in plain text: inputs in CSV, formulas in YAML, rendered as live tables you can click through.
 Built for agents to write and humans to review.
 
-**[See the SpaceX example →](https://danielochoa94.github.io/libreta/spacex/)**
+**[See the SpaceX example →](https://editide.github.io/libreta/spacex/)**
 
 ![The SpaceX income statement, with gross profit traced to the revenue and cost of revenue it is calculated from](docs/images/income-statement.png)
 
@@ -36,22 +36,22 @@ Just as Markdown separates writing from formatting, Libreta does the same for sp
 On macOS or Linux, including WSL:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/danielochoa94/libreta/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/editide/libreta/main/install.sh | sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/danielochoa94/libreta/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/editide/libreta/main/install.ps1 | iex
 ```
 
-The installer downloads the latest [release](https://github.com/danielochoa94/libreta/releases), which bundles everything Libreta needs, and puts `libreta` on `PATH`; rerun it to update.
+The installer downloads the latest [release](https://github.com/editide/libreta/releases), which bundles everything Libreta needs, and puts `libreta` on `PATH`; rerun it to update.
 It installs to `~/.local/lib/libreta`, linked from `~/.local/bin/libreta`, or on Windows to `%LOCALAPPDATA%\Programs\libreta`; delete those to uninstall.
 
 To try the example, clone this repository and open it:
 
 ```bash
-git clone https://github.com/danielochoa94/libreta.git
+git clone https://github.com/editide/libreta.git
 libreta libreta/books/spacex
 ```
 
@@ -65,9 +65,9 @@ A browser marks what it downloads, so the first launch of one meets a warning th
 Paste this into Claude Code or another coding agent, from the folder where you want your models to live:
 
 ```text
-Install Libreta from https://github.com/danielochoa94/libreta by running its installer: on macOS or Linux,
-`curl -fsSL https://raw.githubusercontent.com/danielochoa94/libreta/main/install.sh | sh`; on Windows,
-`irm https://raw.githubusercontent.com/danielochoa94/libreta/main/install.ps1 | iex`.
+Install Libreta from https://github.com/editide/libreta by running its installer: on macOS or Linux,
+`curl -fsSL https://raw.githubusercontent.com/editide/libreta/main/install.sh | sh`; on Windows,
+`irm https://raw.githubusercontent.com/editide/libreta/main/install.ps1 | iex`.
 Read `libreta --docs format` and `libreta --docs running`.
 ```
 
@@ -178,12 +178,13 @@ On WSL, `./scripts/install-windows-from-wsl.sh [folder]` publishes your build fo
 
 ## Status
 
-Libreta is a personal project shared as-is.
-I don't review issues or pull requests, but you are free to fork it and make it your own; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Early.
+Issues are welcome; there are no promises on timing.
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## License
 
-[Apache-2.0](LICENSE).
+Apache-2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 Use it freely, commercially included.
 If Libreta is useful to you or your business, a mention of [editide](https://editide.com) is appreciated.
 

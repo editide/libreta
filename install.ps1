@@ -1,10 +1,10 @@
 # Installs the latest Libreta release, which bundles its own runtime:
-#   irm https://raw.githubusercontent.com/danielochoa94/libreta/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/editide/libreta/main/install.ps1 | iex
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $releaseUrl = if ($env:LIBRETA_RELEASE_URL) { $env:LIBRETA_RELEASE_URL }
-  else { 'https://github.com/danielochoa94/libreta/releases/latest/download' }
+  else { 'https://github.com/editide/libreta/releases/latest/download' }
 $applicationDirectory = if ($env:LIBRETA_INSTALL_DIR) { $env:LIBRETA_INSTALL_DIR }
   else { Join-Path $env:LOCALAPPDATA 'Programs\libreta' }
 $executable = Join-Path $applicationDirectory 'Libreta.exe'
