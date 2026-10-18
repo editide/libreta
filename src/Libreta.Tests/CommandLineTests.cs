@@ -1041,7 +1041,7 @@ public class CommandLineTests
   }
 
   [Fact]
-  public void LinesReadTheCalculatedColumnsThatApplyToThemAfterTheirPeriods()
+  public void LinesReadCalculatedColumnsAfterTheirPeriodsWithFormulaLinesEvaluatingTheirOwnFormula()
   {
     // Arrange
     using LinesBookFixture fixture = new();
@@ -1065,8 +1065,11 @@ public class CommandLineTests
       .ShouldBe(["2024", "2025", "growth"]);
     connectivity.GetProperty("exact").EnumerateArray().Select(value => value.GetString())
       .ShouldBe(["7.34", "11.5", "4.16"]);
-    document.RootElement[1].GetProperty("columns").EnumerateArray().Select(column => column.GetString())
-      .ShouldBe(["2024", "2025"]);
+    JsonElement total = document.RootElement[1];
+    total.GetProperty("columns").EnumerateArray().Select(column => column.GetString())
+      .ShouldBe(["2024", "2025", "growth"]);
+    total.GetProperty("exact").EnumerateArray().Select(value => value.GetString())
+      .ShouldBe(["9.34", "14.5", "5.16"]);
   }
 
   [Fact]
