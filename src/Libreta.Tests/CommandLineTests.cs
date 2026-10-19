@@ -125,6 +125,21 @@ public class CommandLineTests
   }
 
   [Fact]
+  public void ParsesSetRegionsWithItsTableAndRegionsFile()
+  {
+    // Arrange
+    string[] arguments = ["books/spacex", "--set-regions", "facts/10-k.yaml", "regions.json"];
+
+    // Act
+    CommandLineOptions options = CommandLineOptions.Parse(arguments);
+
+    // Assert
+    options.Command.ShouldBe(HeadlessCommand.SetRegions);
+    options.RegionsTable.ShouldBe("facts/10-k.yaml");
+    options.RegionsFile.ShouldBe("regions.json");
+  }
+
+  [Fact]
   public void ParsesLineNamesUpToTheNextOption()
   {
     // Arrange
@@ -632,6 +647,66 @@ public class CommandLineTests
     output.ShouldContain("repeated line: v.total, the same in every column");
     output.ShouldNotContain("repeated line: v.growth");
     output.ShouldContain("2 repeated lines");
+  }
+
+  [Fact]
+  public void CheckReportsFactsWithoutARegionInTablesWithAnImage()
+  {
+    // Arrange
+    using CheckBookFixture fixture = new(
+      """
+      formulas:
+        result:
+          formula: input
+      """,
+      factsCsv: "line_item,2024,2025\ninput,1,2");
+    fixture.Write("v/facts/inputs.yaml", """
+      source:
+        image: inputs.png
+      line_items:
+        input:
+          label: Input
+          image_regions:
+            2024: { x: 1, y: 1, width: 1, height: 1 }
+      """);
+    fixture.WriteBytes("v/facts/inputs.png", [1, 2, 3]);
+
+    // Act
+    (int exitCode, string output) = RunCheck(fixture.Root, false);
+    (int _, string json) = RunCheck(fixture.Root, true);
+
+    // Assert
+    exitCode.ShouldBe(0);
+    output.ShouldContain("unboxed: v/facts/inputs.yaml input[2025]");
+    output.ShouldContain(", 1 unboxed fact");
+    json.ShouldContain("\"unboxed\": [");
+    json.ShouldContain("\"table\": \"v/facts/inputs.yaml\"");
+  }
+
+  [Fact]
+  public void CheckNamesTheFirstFewUnboxedFactsOfATableAndCountsTheRest()
+  {
+    // Arrange
+    using CheckBookFixture fixture = new(
+      """
+      formulas:
+        result:
+          formula: input
+      """,
+      factsCsv: "line_item,2024,2025\ninput,1,2\nother,3,4\nthird,5,6\nfourth,7,8");
+    fixture.Write("v/facts/inputs.yaml", "source:\n  image: inputs.png");
+    fixture.WriteBytes("v/facts/inputs.png", [1, 2, 3]);
+
+    // Act
+    (int exitCode, string output) = RunCheck(fixture.Root, false);
+    (int _, string json) = RunCheck(fixture.Root, true);
+
+    // Assert
+    exitCode.ShouldBe(0);
+    output.ShouldContain(
+      "unboxed: v/facts/inputs.yaml fourth[2024], fourth[2025], input[2024], input[2025], other[2024] (+3 more)");
+    output.ShouldContain(", 8 unboxed facts");
+    json.ShouldContain("\"line\": \"third\"");
   }
 
   [Fact]

@@ -157,7 +157,32 @@ Failed checks include their per-period deltas.
 
 A presented row that resolves to neither a fact nor a formula is reported as a missing line.
 A formula whose every reference names its column, in a folder of several columns, is reported as a repeated line: it shows the same value in each, and belongs in a [folder of one column](format.md#single-values).
-The command exits 1 if a check fails, a view fails to load, a presented calculation is invalid, or a line is missing; a repeated line is only reported.
+A fact whose table has a [source image](format.md#source-images) but no region outlining it is reported as unboxed, on one line per table naming the first five; `--json` lists them all.
+A table without an image is never reported, so figures you don't mean to capture cost nothing.
+The command exits 1 if a check fails, a view fails to load, a presented calculation is invalid, or a line is missing; a repeated line or an unboxed fact is only reported.
+
+## Record source regions
+
+A tool that measures where values sit in a source, such as a browser script, a PDF reader or OCR, records them with `--set-regions`:
+
+```bash
+libreta books/spacex --set-regions historical/facts/10-k.yaml regions.json
+```
+
+```json
+{
+  "image": "10-k.png",
+  "regions": {
+    "revenue": { "2025": { "x": 100, "y": 200, "width": 80, "height": 24 } }
+  }
+}
+```
+
+The table path is read from the working folder, or failing that from the book root, as `--check` prints it.
+`image` is relative to the table, like `source.image`.
+A request naming `image` replaces every region in the table, because a new image moves every coordinate; one without it updates only the regions it names, so a single corrected region leaves the rest alone.
+The table is edited in place, keeping its comments and order, and restored if the book no longer loads.
+The command prints how many regions it wrote and any of the table's facts still unboxed.
 
 ## Share a book as one page
 

@@ -384,7 +384,7 @@ public sealed class BookStructure
       : "";
   }
 
-  private static StringComparer PathComparer => OperatingSystem.IsWindows()
+  internal static StringComparer PathComparer => OperatingSystem.IsWindows()
     ? StringComparer.OrdinalIgnoreCase
     : StringComparer.Ordinal;
 

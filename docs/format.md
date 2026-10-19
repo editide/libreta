@@ -280,6 +280,7 @@ Map the complete printed value, including commas, decimal points, minus signs, o
 Obtain coordinates from browser, PDF, OCR, or image-selection tooling rather than estimating them by eye.
 After adding a region, verify in the modal that its outline identifies both the intended row and period, especially when the same value appears more than once.
 Map every fact taken from one captured table, so the table behaves consistently.
+`--check` reports any fact left unmapped, and `--set-regions` records regions a tool measured; see [running.md](running.md#record-source-regions).
 
 ## The two sign conventions
 
