@@ -174,7 +174,7 @@ dotnet watch --project src/Libreta run -- books/spacex
 ```
 
 `./scripts/install-from-source.sh` makes your build the `libreta` on `PATH`, and the installer puts a release back.
-On WSL, `./scripts/install-windows-from-wsl.sh [folder]` publishes your build for Windows to `%USERPROFILE%\dev\libreta`, or the folder given, for Windows apps that can't reach WSL.
+On WSL, `./scripts/install-windows-from-wsl.sh [folder]` publishes your build for Windows to `libreta` in `%USERPROFILE%\dev`, or in the folder given, for Windows apps that can't reach WSL.
 [AGENTS.md](AGENTS.md) holds the vocabulary and conventions, for people and coding agents alike.
 
 ## Status
