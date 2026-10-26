@@ -191,8 +191,7 @@ public sealed class ExcelFormula
     {
       return null;
     }
-    return new CellCoordinate(name,
-      reference.Column is null ? column : book.CoordinateColumn(reference.Column, scope, name));
+    return new CellCoordinate(name, book.ReferenceColumn(reference.Column, column, scope, name));
   }
 
   private static List<CellCoordinate>? Coordinates(Book book, RangeExpr range, string scope, string line)

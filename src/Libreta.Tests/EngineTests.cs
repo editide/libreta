@@ -1269,6 +1269,62 @@ public class EngineTests
   }
 
   [Fact]
+  public void AnotherFolderReadingALineTakesTheColumnFormulaWhereTheLineLives()
+  {
+    // Arrange
+    using BookFixture fixture = new BookFixture();
+    string results = Path.Combine(fixture.Root, "results");
+    string facts = Path.Combine(results, "facts");
+    Directory.CreateDirectory(facts);
+    File.WriteAllText(Path.Combine(facts, "statement.csv"), """
+      line_item,FY,H1 prior,H1 current
+      revenue,100,40,60
+      """);
+    File.WriteAllText(Path.Combine(facts, "statement.yaml"), """
+      table:
+        title: Statement
+      line_items:
+        revenue:
+          label: Revenue
+      """);
+    File.WriteAllText(Path.Combine(results, "formulas.yaml"), """
+      column_formulas:
+        LTM:
+          formula: self["FY"] - self["H1 prior"] + self["H1 current"]
+          applies_to: facts
+      """);
+    File.WriteAllText(Path.Combine(results, "view.yaml"), """
+      title: Results
+      columns: [FY, H1 prior, H1 current, LTM]
+      rows:
+        - line: revenue
+      """);
+    string backlog = Path.Combine(fixture.Root, "backlog");
+    Directory.CreateDirectory(backlog);
+    File.WriteAllText(Path.Combine(backlog, "formulas.yaml"), """
+      formulas:
+        earned:
+          formula: results.revenue
+      """);
+    File.WriteAllText(Path.Combine(backlog, "view.yaml"), """
+      title: Backlog
+      columns: [FY, LTM]
+      rows:
+        - line: earned
+      """);
+    Book book = Book.Load(fixture.Root);
+    var engine = new Engine(View.Load(book, backlog));
+
+    // Act
+    ResolvedCell year = engine.Cell("earned", "FY");
+    ResolvedCell trailing = engine.Cell("earned", "LTM");
+
+    // Assert
+    year.Value.ShouldBe(100);
+    trailing.Value.ShouldBe(120);
+  }
+
+  [Fact]
   public void RowSignOverridesFormulaPresentation()
   {
     // Arrange

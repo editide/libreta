@@ -386,7 +386,7 @@ public class Engine
           return;
         }
         references.Add(new FormulaReference(reference.Start, reference.Length, line,
-          reference.Column is null ? column : _view.Book.CoordinateColumn(reference.Column, scope, line)));
+          _view.Book.ReferenceColumn(reference.Column, column, scope, line)));
         return;
 
       case RangeExpr range:
@@ -545,7 +545,7 @@ public class Engine
 
   private string ReferenceColumn(RefExpr reference, string column, string scope, string line)
   {
-    return reference.Column is null ? column : _view.Book.CoordinateColumn(reference.Column, scope, line);
+    return _view.Book.ReferenceColumn(reference.Column, column, scope, line);
   }
 
   private ResolvedCell ResolveDefault(string line, string column)

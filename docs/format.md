@@ -444,6 +444,7 @@ A calculated-column `note` describes the column method and appears when inspecti
 `applies_to` is `all` by default, so the column formula lands on every line, which suits a growth rate or a change.
 Set it to `facts` for a column that is itself a period, such as a last-twelve-months bridge.
 Fact lines are then bridged by the column formula, and calculated lines evaluate their own formula in that column, so a margin divides bridged profit by bridged revenue rather than bridging the margins.
+Another folder reading such a line in a column of the same name gets the bridged value, so `results.revenue` fills an `LTM` column elsewhere without naming `results.revenue["LTM"]`.
 
 ```yaml
 column_formulas:
