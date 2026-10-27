@@ -597,9 +597,10 @@ public static class HeadlessRunner
     int failed = checkedViews.Sum(view => view.Checks.Count(check => !check.Passed));
     int errors = checkedViews.Count(view => view.Error is not null);
     int missingLines = checkedViews.Sum(view => view.Missing.Count);
-    // A formula pinned to one column repeats its value under every column of its scope.
+    // A formula pinned to one column repeats its value under every column of its scope that no cell override takes.
     List<string> repeated = book.Formulas.Values
-      .Where(formula => Expr.Pinned(formula.Expression) && book.PeriodsFor(formula.Scope).Count > 1)
+      .Where(formula => Expr.Pinned(formula.Expression) &&
+        book.PeriodsFor(formula.Scope).Count(column => !book.CellOverrides.ContainsKey((formula.Name, column))) > 1)
       .Select(formula => formula.Name)
       .Order(StringComparer.Ordinal)
       .ToList();

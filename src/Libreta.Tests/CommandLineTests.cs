@@ -650,6 +650,47 @@ public class CommandLineTests
   }
 
   [Fact]
+  public void CheckDoesNotWarnOfAPinnedFormulaThatCellOverridesLeaveInOneColumn()
+  {
+    // Arrange
+    using CheckBookFixture fixture = new(
+      """
+      formulas:
+        picked:
+          formula: input["2024"]
+        partly:
+          formula: input["2024"]
+
+      cell_overrides:
+        picked:
+          2025:
+            formula: input["2025"]
+          2026:
+            blank: true
+        partly:
+          2026:
+            blank: true
+      """,
+      """
+      title: Review
+      columns: [2024, 2025, 2026]
+      rows:
+        - line: picked
+        - line: partly
+      """,
+      "line_item,2024,2025,2026\ninput,1,2,3");
+
+    // Act
+    (int exitCode, string output) = RunCheck(fixture.Root, false);
+
+    // Assert
+    exitCode.ShouldBe(0);
+    output.ShouldNotContain("repeated line: v.picked");
+    output.ShouldContain("repeated line: v.partly, the same in every column");
+    output.ShouldContain("1 repeated line");
+  }
+
+  [Fact]
   public void CheckReportsFactsWithoutARegionInTablesWithAnImage()
   {
     // Arrange

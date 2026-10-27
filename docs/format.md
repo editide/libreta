@@ -365,7 +365,7 @@ formulas:
     formula: historical.revenue["2025"] - historical.revenue["2023"]
 ```
 
-A formula whose every reference names its column has the same value in every column of its folder, so in a folder of periods it repeats one figure under each, and `--check` reports it as a repeated line.
+A formula whose every reference names its column has the same value in every column of its folder, so in a folder of periods it repeats one figure under each, and `--check` reports it as a repeated line unless cell overrides take all but one of the columns.
 
 ### Operators and functions
 

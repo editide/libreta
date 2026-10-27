@@ -156,7 +156,7 @@ The report lists results by view and ends with totals for passed checks, failed 
 Failed checks include their per-period deltas.
 
 A presented row that resolves to neither a fact nor a formula is reported as a missing line.
-A formula whose every reference names its column, in a folder of several columns, is reported as a repeated line: it shows the same value in each, and belongs in a [folder of one column](format.md#single-values).
+A formula whose every reference names its column, in a folder of several columns, is reported as a repeated line when two or more columns have no cell override: it shows the same value in each, and belongs in a [folder of one column](format.md#single-values).
 A fact whose table has a [source image](format.md#source-images) but no region outlining it is reported as unboxed, on one line per table naming the first five; `--json` lists them all.
 A table without an image is never reported, so figures you don't mean to capture cost nothing.
 The command exits 1 if a check fails, a view fails to load, a presented calculation is invalid, or a line is missing; a repeated line or an unboxed fact is only reported.
