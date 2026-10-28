@@ -240,6 +240,36 @@ public class CommandLineTests
   }
 
   [Fact]
+  public void ACellLinkNamesACalculatedColumnAsThePageKeysIt()
+  {
+    // Arrange
+    using var fixture = new ViewFixture();
+    fixture.WriteStatement();
+    fixture.Write("statement/formulas.yaml", """
+      formulas:
+        gross_profit:
+          formula: revenue - cost_of_revenue
+      column_formulas:
+        Growth:
+          formula: self["2025"] - self["2024"]
+      """);
+    fixture.Write("statement/view.yaml", """
+      title: Statement
+      columns: [2024, 2025, Growth]
+      rows:
+        - line: revenue
+        - line: gross_profit
+      """);
+    Book book = Book.Load(fixture.Root);
+
+    // Act
+    RequestedCell cell = CellLink.Resolve(book, "statement.gross_profit", "Growth");
+
+    // Assert
+    cell.ShouldBe(new RequestedCell("statement", "statement.gross_profit", "statement.Growth"));
+  }
+
+  [Fact]
   public void ACellLinkToALineNoViewPresentsOpensTheLineOnItsOwn()
   {
     // Arrange

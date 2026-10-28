@@ -401,6 +401,7 @@ public static class CellLink
   public static RequestedCell Resolve(Book book, string name, string column)
   {
     string line = book.Resolve(name, "") ?? throw new ArgumentException($"Unknown line '{name}'.");
+    column = book.CoordinateColumn(column, "", line);
     string view = book.PresentingView(line, column, "") ?? book.PresentingView(line, null, "") ??
       $"{View.LinePrefix}{line}";
     return new RequestedCell(view, line, column);
