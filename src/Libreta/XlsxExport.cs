@@ -505,6 +505,10 @@ public static class XlsxExport
       }
       shown.Add(new ExcelAddress(sheet.Name, row, column, contra));
 
+      if (cell.Text is not null)
+      {
+        return Text(cell.Text, cell.Text.Length, Styles.Index(role with { Ink = Ink.Hardcode, Right = true }), comment);
+      }
       if (cell.Value is not double value)
       {
         string unresolved = view.Formatter.Unresolved;

@@ -22,3 +22,6 @@ formats:
 
   date:
     date: MMM d, yyyy
+
+  text:
+    text: true

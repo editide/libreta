@@ -23,6 +23,8 @@ public class Fact
   public bool MissingZero { get; set; }
   /// <summary>Its CSV cells are ISO dates, held as day serials.</summary>
   public bool Date { get; set; }
+  /// <summary>Its CSV cells are labels such as credit ratings, which no formula reads.</summary>
+  public bool Text { get; set; }
   /// <summary>One per fragment that wrote a distinct note, in load order.</summary>
   public List<string> Notes { get; set; } = new List<string>();
   public Dictionary<string, FactCell> Cells { get; set; } = new Dictionary<string, FactCell>();
@@ -31,6 +33,8 @@ public class Fact
 public class FactCell
 {
   public double Value { get; set; }
+  /// <summary>The cell as printed when its line holds text, in which case <see cref="Value"/> means nothing.</summary>
+  public string? Text { get; set; }
   public bool PrintedDash { get; set; }
   public string? Note { get; set; }
   /// <summary>The note on the line in the fact table this cell came from.</summary>
@@ -736,6 +740,8 @@ public class Book
     AddPeriods(scope, periods);
     string sourceImage = ResolveSourceImage(metadataPath, metadata.Source.Image);
     var loadedLines = new HashSet<string>();
+    // Units decide whether a line holds text, so a typo in a numeric row still fails here, at its cell.
+    var formatter = new Formatter(Formatter.Load(Path.GetDirectoryName(csvPath)!, Root, YamlFile.Deserializer()));
 
     for (int lineIndex = 1; lineIndex < lines.Length; lineIndex++)
     {
@@ -806,6 +812,17 @@ public class Book
           : new List<string> { lineItem.Note.Trim() }
       };
 
+      fact.Text = formatter.IsText(fact.Units) == true;
+      string? misfit = !fact.Text ? null
+        : fact.Contra ? "sign: contra"
+        : negated ? "printed: negated"
+        : fact.MissingZero ? "missing: zero"
+        : null;
+      if (misfit is not null)
+      {
+        throw new InvalidDataException($"'{metadataPath}' gives text line {localName} {misfit}");
+      }
+
       bool numbers = false;
       for (int index = 0; index < periods.Count; index++)
       {
@@ -814,14 +831,18 @@ public class Book
         {
           continue;
         }
-        if (cell is "—" or "–" or "-")
+        if (fact.Text)
+        {
+          fact.Cells[periods[index]] = Cell(periods[index], 0, false, cell);
+          continue;
+        }
+        if (IsDash(cell))
         {
           numbers = true;
           fact.Cells[periods[index]] = Cell(periods[index], 0, true);
           continue;
         }
-        if (double.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) &&
-          double.IsFinite(value))
+        if (TryParseNumber(cell, out double value))
         {
           numbers = true;
           fact.Cells[periods[index]] = Cell(periods[index], negated ? -value : value, false);
@@ -841,11 +862,12 @@ public class Book
       }
       MergeFact(csvPath, fact);
 
-      FactCell Cell(string period, double value, bool printedDash)
+      FactCell Cell(string period, double value, bool printedDash, string? text = null)
       {
         return new FactCell
         {
           Value = value,
+          Text = text,
           PrintedDash = printedDash,
           Note = cellNotes.GetValueOrDefault(period)?.Trim(),
           LineNote = fact.Notes.FirstOrDefault(),
@@ -874,6 +896,7 @@ public class Book
       existing, incoming, csvPath, nameof(Fact.FiscalYearEnd), existing.FiscalYearEnd, incoming.FiscalYearEnd);
     RequireMatchingFactMetadata(existing, incoming, csvPath, nameof(Fact.Contra), existing.Contra, incoming.Contra);
     RequireMatchingFactMetadata(existing, incoming, csvPath, nameof(Fact.Date), existing.Date, incoming.Date);
+    RequireMatchingFactMetadata(existing, incoming, csvPath, nameof(Fact.Text), existing.Text, incoming.Text);
     RequireMatchingFactMetadata(
       existing, incoming, csvPath, nameof(Fact.MissingZero), existing.MissingZero, incoming.MissingZero);
 
@@ -887,6 +910,16 @@ public class Book
       existing.Cells.Add(period, cell);
     }
     existing.Notes.AddRange(incoming.Notes.Where(note => !existing.Notes.Contains(note)));
+  }
+
+  private static bool IsDash(string cell)
+  {
+    return cell is "—" or "–" or "-";
+  }
+
+  private static bool TryParseNumber(string cell, out double value)
+  {
+    return double.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
   }
 
   private static void RequireMatchingFactMetadata<T>(

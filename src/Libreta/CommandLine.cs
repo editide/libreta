@@ -525,12 +525,12 @@ public static class HeadlessRunner
         Contra = fact?.Contra == true ? true : null,
         Columns = columns,
         Exact = cells
-          .Select(cell => cell.Value is null ? null : formatter.Exact(cell.Units, cell.Value.Value))
+          .Select(cell => cell.Text ?? (cell.Value is null ? null : formatter.Exact(cell.Units, cell.Value.Value)))
           .ToList(),
-        Display = cells.Select(cell => cell.Value is null
+        Display = cells.Select(cell => cell.Unresolved
           ? formatter.Unresolved
           : PayloadBuilder.Display(scoped.View, cell, false)).ToList(),
-        Unresolved = cells.Any(cell => cell.Value is null) ? cells.Select(cell => cell.Value is null).ToList() : null
+        Unresolved = cells.Any(cell => cell.Unresolved) ? cells.Select(cell => cell.Unresolved).ToList() : null
       };
     }
     catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException)
