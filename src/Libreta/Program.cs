@@ -133,6 +133,29 @@ if (options.Command == HeadlessCommand.SetRegions)
   }
 }
 
+if (options.Command == HeadlessCommand.ShowRegions)
+{
+  try
+  {
+    List<RegionImage> images = SourceRegionImages.Write(root, options.RegionsTable!, options.Output!);
+    int width = images.Select(image => image.Line.Length + image.Period.Length + 2).DefaultIfEmpty().Max();
+    int printedWidth = images.Select(image => image.Printed.Length).DefaultIfEmpty().Max();
+    foreach (RegionImage image in images)
+    {
+      string cell = $"{image.Line}[{image.Period}]";
+      Console.WriteLine(
+        $"  {cell.PadRight(width)}  {image.Printed.PadRight(printedWidth)}  {image.File ?? image.Problem}");
+    }
+    Console.WriteLine($"  {images.Count(image => image.File is not null)} regions written to {options.Output}");
+    return images.Any(image => image.Problem is not null) ? 1 : 0;
+  }
+  catch (Exception exception)
+  {
+    Console.Error.WriteLine(exception.Message);
+    return 1;
+  }
+}
+
 if (options.Command is not null)
 {
   try

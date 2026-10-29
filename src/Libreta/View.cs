@@ -31,6 +31,8 @@ public class Fact
 public class FactCell
 {
   public double Value { get; set; }
+  /// <summary>The CSV cell as written, which is what its source region should show.</summary>
+  public string Printed { get; set; } = "";
   public bool PrintedDash { get; set; }
   public string? Note { get; set; }
   /// <summary>The note on the line in the fact table this cell came from.</summary>
@@ -817,14 +819,14 @@ public class Book
         if (cell is "—" or "–" or "-")
         {
           numbers = true;
-          fact.Cells[periods[index]] = Cell(periods[index], 0, true);
+          fact.Cells[periods[index]] = Cell(periods[index], cell, 0, true);
           continue;
         }
         if (double.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out double value) &&
           double.IsFinite(value))
         {
           numbers = true;
-          fact.Cells[periods[index]] = Cell(periods[index], negated ? -value : value, false);
+          fact.Cells[periods[index]] = Cell(periods[index], cell, negated ? -value : value, false);
           continue;
         }
         if (!Formatter.TryParseDate(cell, out double serial))
@@ -833,7 +835,7 @@ public class Book
             $"'{csvPath}:{lineIndex + 1}' has invalid value '{cell}' for {localName}[{periods[index]}]");
         }
         fact.Date = true;
-        fact.Cells[periods[index]] = Cell(periods[index], serial, false);
+        fact.Cells[periods[index]] = Cell(periods[index], cell, serial, false);
       }
       if (numbers && fact.Date)
       {
@@ -841,11 +843,12 @@ public class Book
       }
       MergeFact(csvPath, fact);
 
-      FactCell Cell(string period, double value, bool printedDash)
+      FactCell Cell(string period, string printed, double value, bool printedDash)
       {
         return new FactCell
         {
           Value = value,
+          Printed = printed,
           PrintedDash = printedDash,
           Note = cellNotes.GetValueOrDefault(period)?.Trim(),
           LineNote = fact.Notes.FirstOrDefault(),

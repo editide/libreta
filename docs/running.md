@@ -184,6 +184,22 @@ A request naming `image` replaces every region in the table, because a new image
 The table is edited in place, keeping its comments and order, and restored if the book no longer loads.
 The command prints how many regions it wrote and any of the table's facts still unboxed.
 
+## Read back source regions
+
+`--check` cannot tell an outline on the right cell from one on the row beside it, so read each region back:
+
+```bash
+libreta books/spacex --show-regions historical/facts/10-k.yaml regions
+```
+
+```text
+  revenue[2025]  14015  /home/me/regions/revenue.2025.png
+```
+
+Each region is cut from the table's image with a margin of its own height and outlined in red, then listed beside the value its CSV records, so each picture should show that value inside the outline.
+The table path is read as `--set-regions` reads it, and the folder is created if missing.
+A region reaching past the edge of its image is listed with that problem instead of a file, and the command exits 1; it usually means coordinates measured at another scale.
+
 ## Share a book as one page
 
 Write the whole book to a single HTML file that opens in a browser with no server:

@@ -279,7 +279,7 @@ Do not resize or replace the image after recording regions because its coordinat
 Map the complete printed value, including commas, decimal points, minus signs, or parentheses, rather than a nearby cell or the whole row.
 Obtain coordinates from browser, PDF, OCR, or image-selection tooling rather than estimating them by eye.
 Measure from the image's top-left corner at its scale: a page captured at 2× device scale or cropped from a larger page needs its coordinates multiplied and offset to match, or every outline lands in the wrong place without any error.
-Have the measuring tool read back the text inside each region and compare it with the fact, because an outline on the neighboring row or period is just as valid to `--check`.
+Read back the text inside each region and compare it with the fact, because an outline on the neighboring row or period is just as valid to `--check`; `--show-regions` cuts each region out of its image for this (see [running.md](running.md#read-back-source-regions)).
 After adding a region, verify in the modal that its outline identifies both the intended row and period, especially when the same value appears more than once.
 Map every fact taken from one captured table, so the table behaves consistently.
 `--check` reports any fact left unmapped, and `--set-regions` records regions a tool measured; see [running.md](running.md#record-source-regions).
