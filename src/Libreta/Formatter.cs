@@ -35,23 +35,32 @@ public class Formatter
   /// <summary>Null for units with no format, which fail when displayed rather than here.</summary>
   public bool? IsDate(string? units)
   {
-    string? key = units ?? formats.DefaultUnits;
-    if (key is null)
-    {
-      return formats.Plain.Date is not null;
-    }
-    return formats.Formats.TryGetValue(key, out FormatSpec? spec) ? spec.Date is not null : null;
+    return Find(units) is FormatSpec spec ? spec.Date is not null : null;
   }
 
-  /// <summary>Every numeric unit, with "" for a value that has none; dates are left out, having no scale.</summary>
+  /// <summary>Null for units with no format, which fail when displayed rather than here.</summary>
+  public bool? IsText(string? units)
+  {
+    return Find(units)?.Text;
+  }
+
+  private FormatSpec? Find(string? units)
+  {
+    string? key = units ?? formats.DefaultUnits;
+    return key is null ? formats.Plain : formats.Formats.GetValueOrDefault(key);
+  }
+
+  /// <summary>Every numeric unit, with "" for a value that has none; dates and text are left out, having no scale.
+  /// </summary>
   public Dictionary<string, UnitPayload> Units()
   {
     var units = new Dictionary<string, UnitPayload>();
-    if (formats.DefaultUnits is null && formats.Plain.Date is null)
+    if (formats.DefaultUnits is null && formats.Plain.Date is null && !formats.Plain.Text)
     {
       units.Add("", Payload(formats.Plain));
     }
-    foreach ((string name, FormatSpec spec) in formats.Formats.Where(format => format.Value.Date is null))
+    foreach ((string name, FormatSpec spec) in
+      formats.Formats.Where(format => format.Value.Date is null && !format.Value.Text))
     {
       units.Add(name, Payload(spec));
     }
@@ -133,7 +142,8 @@ public class Formatter
       Suffix = format.Suffix ?? defaults.Suffix ?? builtIn.Suffix ?? builtInDefaults.Suffix ?? fallback.Suffix,
       Negative = format.Negative ?? defaults.Negative ?? builtIn.Negative ?? builtInDefaults.Negative
         ?? fallback.Negative,
-      Date = format.Date ?? defaults.Date ?? builtIn.Date ?? builtInDefaults.Date
+      Date = format.Date ?? defaults.Date ?? builtIn.Date ?? builtInDefaults.Date,
+      Text = format.Text ?? defaults.Text ?? builtIn.Text ?? builtInDefaults.Text ?? fallback.Text
     };
 
     formats.Plain = Resolve(none, none);
@@ -282,6 +292,7 @@ public class Formatter
     format.Suffix = overrides.Suffix ?? format.Suffix;
     format.Negative = overrides.Negative ?? format.Negative;
     format.Date = overrides.Date ?? format.Date;
+    format.Text = overrides.Text ?? format.Text;
   }
 
   private class FormatsOverride
@@ -307,6 +318,7 @@ public class Formatter
     public string? Suffix { get; set; }
     public string? Negative { get; set; }
     public string? Date { get; set; }
+    public bool? Text { get; set; }
   }
 
 

@@ -12,7 +12,12 @@ public record ResolvedCell(
   FactCell? FactCell = null,
   string? Note = null,
   bool Omitted = false,
-  bool? Date = null);
+  bool? Date = null,
+  string? Text = null)
+{
+  /// <summary>Neither a number nor text, so there is nothing to show.</summary>
+  public bool Unresolved => Value is null && Text is null;
+}
 
 public readonly record struct ActiveDependency(string Reference, string? Line, string Column, string Scope);
 
@@ -62,7 +67,7 @@ public class Engine
     try
     {
       ResolvedCell result = Resolve(line, column);
-      RequireDateUnits(result);
+      RequireUnits(result);
       memo[key] = result;
       return result;
     }
@@ -90,6 +95,7 @@ public class Engine
         {
           return null;
         }
+        RequireNumeric(name);
         return CellAt(name, ReferenceColumn(reference, column, scope, name)).Value;
 
       case RangeExpr:
@@ -336,8 +342,8 @@ public class Engine
     }
     if (_view.Facts.TryGetValue(line, out Fact? fact) && fact.Cells.TryGetValue(column, out FactCell? factCell))
     {
-      return new ResolvedCell(line, column, factCell.Value, "fact", fact.Units, FactCell: factCell,
-        Note: factCell.Note, Date: fact.Date);
+      return new ResolvedCell(line, column, fact.Text ? null : factCell.Value, "fact", fact.Units, FactCell: factCell,
+        Note: factCell.Note, Date: fact.Date, Text: factCell.Text);
     }
 
     if (_view.Book.CellOverrides.TryGetValue((line, column), out CellOverride? cellOverride))
@@ -555,7 +561,13 @@ public class Engine
       return new ResolvedCell(line, column, null, "missing", Units(line));
     }
 
-    if (_view.Facts.TryGetValue(line, out Fact? fact) && fact.MissingZero &&
+    // A calculated column reads its line, which a text line forbids, so a period the source left out stays empty.
+    if (_view.Facts.TryGetValue(line, out Fact? fact) && fact.Text)
+    {
+      return new ResolvedCell(line, column, null, "missing", fact.Units);
+    }
+
+    if (fact is not null && fact.MissingZero &&
       !_view.ColumnFormulas.ContainsKey(column))
     {
       return new ResolvedCell(line, column, 0, "fact", fact.Units, Omitted: true, Date: fact.Date);
@@ -748,6 +760,7 @@ public class Engine
         {
           return null;
         }
+        RequireNumeric(name);
         foreach (string rangeColumn in _view.Book.ColumnsInRange(name, range.StartColumn, range.EndColumn))
         {
           double? value = CellAt(name, rangeColumn).Value;
@@ -780,14 +793,33 @@ public class Engine
     return Finite(result);
   }
 
-  private void RequireDateUnits(ResolvedCell cell)
+  private void RequireNumeric(string line)
   {
+    if (_view.Facts.TryGetValue(line, out Fact? fact) && fact.Text)
+    {
+      throw new InvalidDataException($"'{line}' holds text, which a formula cannot read");
+    }
+  }
+
+  private void RequireUnits(ResolvedCell cell)
+  {
+    string units = cell.Units ?? _view.Formatter.DefaultUnits ?? "(none)";
+    bool? text = _view.Formatter.IsText(cell.Units);
+    if (cell.Text is not null && text == false)
+    {
+      throw new InvalidDataException(
+        $"'{cell.Line}[{cell.Column}]' holds text but its units '{units}' have no text format");
+    }
+    if (cell.Value is not null && text == true)
+    {
+      throw new InvalidDataException(
+        $"'{cell.Line}[{cell.Column}]' holds a number but its units '{units}' format text");
+    }
     if (cell.Value is null || cell.Date is not bool date || _view.Formatter.IsDate(cell.Units) is not bool formatted ||
       date == formatted)
     {
       return;
     }
-    string units = cell.Units ?? _view.Formatter.DefaultUnits ?? "(none)";
     throw new InvalidDataException(date
       ? $"'{cell.Line}[{cell.Column}]' holds a date but its units '{units}' have no date format"
       : $"'{cell.Line}[{cell.Column}]' holds a number but its units '{units}' format a date");

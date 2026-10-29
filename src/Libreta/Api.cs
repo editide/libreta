@@ -304,7 +304,7 @@ public static class PayloadBuilder
     string? lineNote = cell.FactCell?.LineNote
       ?? (formula is not null && ReferenceEquals(cell.Expression, formula.Expression) ? formula.Note : null);
     // A cell in other units than its line, such as a growth rate beside amounts, is a different quantity.
-    bool contra = Contra(lineEntry.Sign, fact) && cell.Units == engine.Units(coordinate.Line);
+    bool contra = cell.Text is null && Contra(lineEntry.Sign, fact) && cell.Units == engine.Units(coordinate.Line);
     string scope = cell.Scope ?? view.Scope;
     CellLink link = CellLinkFor(view, cell, coordinate.Line);
     CalculationPayload? calculation = cell.Expression is null
@@ -313,9 +313,9 @@ public static class PayloadBuilder
     return new CellPayload(
       coordinate.Line,
       coordinate.Column,
-      cell.Value is null ? view.Formatter.Unresolved : Display(view, cell, contra),
-      cell.Value is null ? null : view.Formatter.Exact(cell.Units, cell.Value.Value),
-      cell.Value is null,
+      cell.Unresolved ? view.Formatter.Unresolved : Display(view, cell, contra),
+      cell.Text ?? (cell.Value is null ? null : view.Formatter.Exact(cell.Units, cell.Value.Value)),
+      cell.Unresolved,
       cell.Kind,
       link.Linked,
       cell.Units ?? view.Formatter.DefaultUnits ?? "",
@@ -704,6 +704,10 @@ public static class PayloadBuilder
 
   public static string Display(View view, ResolvedCell cell, bool contra)
   {
+    if (cell.Text is not null)
+    {
+      return cell.Text;
+    }
     double value = contra ? -cell.Value!.Value : cell.Value!.Value;
     return value == 0 && ZeroDisplay(view, cell) is string zero ? zero : view.Formatter.Format(cell.Units, value);
   }
