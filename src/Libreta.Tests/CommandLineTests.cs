@@ -125,6 +125,21 @@ public class CommandLineTests
   }
 
   [Fact]
+  public void ParsesShowRegionsWithItsTableAndFolder()
+  {
+    // Arrange
+    string[] arguments = ["books/spacex", "--show-regions", "facts/10-k.yaml", "regions"];
+
+    // Act
+    CommandLineOptions options = CommandLineOptions.Parse(arguments);
+
+    // Assert
+    options.Command.ShouldBe(HeadlessCommand.ShowRegions);
+    options.RegionsTable.ShouldBe("facts/10-k.yaml");
+    options.Output.ShouldBe("regions");
+  }
+
+  [Fact]
   public void ParsesSetRegionsWithItsTableAndRegionsFile()
   {
     // Arrange

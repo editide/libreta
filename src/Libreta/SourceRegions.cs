@@ -32,23 +32,11 @@ public static partial class SourceRegionWriter
 
   /// <summary>A request naming an image replaces every region in the table, since a new image moves every coordinate;
   /// one without updates only the regions it names. The book is then reloaded, and the table restored if it no longer
-  /// loads. A relative table path that is not found from the working folder is read from the book
-  /// root, as <c>--check</c> prints it.</summary>
+  /// loads.</summary>
   public static SourceRegionResult Write(string root, string tablePath, string regionsPath)
   {
-    string fullRoot = Path.GetFullPath(root);
-    string metadataPath = Path.IsPathRooted(tablePath) || File.Exists(tablePath)
-      ? Path.GetFullPath(tablePath)
-      : Path.GetFullPath(tablePath, fullRoot);
+    (string fullRoot, string metadataPath, Book book) = FactTable(root, tablePath);
     string csvPath = Path.ChangeExtension(metadataPath, ".csv");
-    Book book = Book.Load(fullRoot);
-    bool loaded = book.Facts.Values
-      .SelectMany(fact => fact.Cells.Values)
-      .Any(cell => BookStructure.PathComparer.Equals(Path.GetFullPath(cell.SourcePath), csvPath));
-    if (!Path.GetExtension(metadataPath).Equals(".yaml", StringComparison.OrdinalIgnoreCase) || !loaded)
-    {
-      throw new InvalidDataException($"'{tablePath}' is not a fact table in {fullRoot}");
-    }
 
     SourceRegionRequest request;
     try
@@ -122,6 +110,26 @@ public static partial class SourceRegionWriter
     return new SourceRegionResult(
       request.Regions.Values.Sum(regions => regions.Count),
       Unboxed(book).Where(fact => fact.Table == table).ToList());
+  }
+
+  /// <summary>The table's full path and the book holding it. A relative path that is not found from the working
+  /// folder is read from the book root, as <c>--check</c> prints it.</summary>
+  public static (string Root, string Table, Book Book) FactTable(string root, string tablePath)
+  {
+    string fullRoot = Path.GetFullPath(root);
+    string metadataPath = Path.IsPathRooted(tablePath) || File.Exists(tablePath)
+      ? Path.GetFullPath(tablePath)
+      : Path.GetFullPath(tablePath, fullRoot);
+    string csvPath = Path.ChangeExtension(metadataPath, ".csv");
+    Book book = Book.Load(fullRoot);
+    bool loaded = book.Facts.Values
+      .SelectMany(fact => fact.Cells.Values)
+      .Any(cell => BookStructure.PathComparer.Equals(Path.GetFullPath(cell.SourcePath), csvPath));
+    if (!Path.GetExtension(metadataPath).Equals(".yaml", StringComparison.OrdinalIgnoreCase) || !loaded)
+    {
+      throw new InvalidDataException($"'{tablePath}' is not a fact table in {fullRoot}");
+    }
+    return (fullRoot, metadataPath, book);
   }
 
   /// <summary>The first few unboxed facts by line and period, and a count of the rest, keeping a table that boxes

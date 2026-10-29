@@ -33,6 +33,8 @@ public class Fact
 public class FactCell
 {
   public double Value { get; set; }
+  /// <summary>The CSV cell as written, which is what its source region should show.</summary>
+  public string Printed { get; set; } = "";
   /// <summary>The cell as printed when its line holds text, in which case <see cref="Value"/> means nothing.</summary>
   public string? Text { get; set; }
   public bool PrintedDash { get; set; }
@@ -833,19 +835,19 @@ public class Book
         }
         if (fact.Text)
         {
-          fact.Cells[periods[index]] = Cell(periods[index], 0, false, cell);
+          fact.Cells[periods[index]] = Cell(periods[index], cell, 0, false, true);
           continue;
         }
         if (IsDash(cell))
         {
           numbers = true;
-          fact.Cells[periods[index]] = Cell(periods[index], 0, true);
+          fact.Cells[periods[index]] = Cell(periods[index], cell, 0, true);
           continue;
         }
         if (TryParseNumber(cell, out double value))
         {
           numbers = true;
-          fact.Cells[periods[index]] = Cell(periods[index], negated ? -value : value, false);
+          fact.Cells[periods[index]] = Cell(periods[index], cell, negated ? -value : value, false);
           continue;
         }
         if (!Formatter.TryParseDate(cell, out double serial))
@@ -854,7 +856,7 @@ public class Book
             $"'{csvPath}:{lineIndex + 1}' has invalid value '{cell}' for {localName}[{periods[index]}]");
         }
         fact.Date = true;
-        fact.Cells[periods[index]] = Cell(periods[index], serial, false);
+        fact.Cells[periods[index]] = Cell(periods[index], cell, serial, false);
       }
       if (numbers && fact.Date)
       {
@@ -862,12 +864,13 @@ public class Book
       }
       MergeFact(csvPath, fact);
 
-      FactCell Cell(string period, double value, bool printedDash, string? text = null)
+      FactCell Cell(string period, string printed, double value, bool printedDash, bool text = false)
       {
         return new FactCell
         {
           Value = value,
-          Text = text,
+          Printed = printed,
+          Text = text ? printed : null,
           PrintedDash = printedDash,
           Note = cellNotes.GetValueOrDefault(period)?.Trim(),
           LineNote = fact.Notes.FirstOrDefault(),

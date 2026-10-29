@@ -92,7 +92,7 @@ public record LinePayload
   public List<bool>? Unresolved { get; init; }
 }
 
-public enum HeadlessCommand { List, View, Value, Lines, Check, Export, Url, SetRegions }
+public enum HeadlessCommand { List, View, Value, Lines, Check, Export, Url, SetRegions, ShowRegions }
 
 public enum DocumentationTopic { Index, Format, Running }
 
@@ -110,8 +110,10 @@ public class CommandLineOptions
   public (string Line, string Column)? Cell { get; private init; }
   /// <summary>The caller opens the page itself, so the server opens no tab, and stops if no page comes.</summary>
   public bool NoOpen { get; private init; }
+  /// <summary>The file <c>--export</c> writes, or the folder <c>--show-regions</c> writes its images to.</summary>
   public string? Output { get; private init; }
-  /// <summary>The fact table <c>--set-regions</c> writes, and the JSON file of regions it writes there.</summary>
+  /// <summary>The fact table <c>--set-regions</c> writes or <c>--show-regions</c> reads, and the JSON file of regions
+  /// <c>--set-regions</c> writes there.</summary>
   public string? RegionsTable { get; private init; }
   public string? RegionsFile { get; private init; }
   public bool Json { get; private init; }
@@ -205,6 +207,13 @@ public class CommandLineOptions
           regionsTable = arguments[++index];
           regionsFile = arguments[++index];
           break;
+        case "--show-regions":
+          RequireNoCommand(command, argument);
+          Require(arguments, index, 2);
+          command = HeadlessCommand.ShowRegions;
+          regionsTable = arguments[++index];
+          output = arguments[++index];
+          break;
         case "--url":
           RequireNoCommand(command, argument);
           command = HeadlessCommand.Url;
@@ -241,9 +250,11 @@ public class CommandLineOptions
     if (command is not null && portSpecified)
     {
       throw new ArgumentException(
-        "--port cannot be combined with --list, --view, --value, --lines, --check, --export, --set-regions or --url.");
+        "--port cannot be combined with --list, --view, --value, --lines, --check, --export, --set-regions, " +
+        "--show-regions or --url.");
     }
-    if ((command is HeadlessCommand.Export or HeadlessCommand.Url or HeadlessCommand.SetRegions ||
+    if ((command is HeadlessCommand.Export or HeadlessCommand.Url or HeadlessCommand.SetRegions or
+      HeadlessCommand.ShowRegions ||
       command is null && cell is null) && json)
     {
       throw new ArgumentException("--json requires --list, --view, --value, --lines, --check or --cell.");
@@ -296,6 +307,8 @@ public class CommandLineOptions
     writer.WriteLine("  libreta [<book-root>] --export <file.xlsx>   (the whole book as a workbook, a sheet per view)");
     writer.WriteLine("  libreta [<book-root>] --set-regions <table.yaml> <regions.json>   (a fact table's source image " +
       "and regions, measured by another tool)");
+    writer.WriteLine("  libreta [<book-root>] --show-regions <table.yaml> <folder>   (each region cut from its image " +
+      "and outlined, to read back against its value)");
     writer.WriteLine("  libreta [<book-root>] --url   (the address of the server already running the book)");
     writer.WriteLine("  libreta --docs [format|running]");
     writer.WriteLine();
@@ -318,8 +331,8 @@ public class CommandLineOptions
     if (command is not null)
     {
       throw new ArgumentException(
-        $"Use only one of --list, --view, --value, --lines, --check, --export, --set-regions or --url; found " +
-        $"'{argument}' after another.");
+        $"Use only one of --list, --view, --value, --lines, --check, --export, --set-regions, --show-regions or " +
+        $"--url; found '{argument}' after another.");
     }
   }
 

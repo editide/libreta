@@ -88,6 +88,7 @@ For the agent, a CLI:
 - `libreta --lines` returns many lines at once by qualified name, for a tool such as a slide deck quoting the book.
 - `libreta --check` runs every check, such as subtotals matching the printed totals or the balance sheet balancing.
 - `libreta --set-regions` records where each value sits in a fact table's source image, as measured by a browser script, PDF reader or OCR, and `--check` reports values a captured table leaves unboxed.
+- `libreta --show-regions` cuts each recorded region out of its image, outlined, beside the value it should show, so an agent can read back what it boxed.
 
 For you, a live page in the browser:
 
