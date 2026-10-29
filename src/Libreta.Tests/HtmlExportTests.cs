@@ -75,6 +75,37 @@ public class HtmlExportTests
   }
 
   [Fact]
+  public void EmbedsAWideImageNarrowerWithItsRegionsScaledToMatch()
+  {
+    // Arrange
+    using StoreFixture fixture = Fixture("analysis");
+    using SKBitmap wide = new SKBitmap(2800, 1000);
+    wide.Erase(SKColors.White);
+    File.WriteAllBytes(fixture.SourceImage, Encode(wide, SKEncodedImageFormat.Png, 100));
+    fixture.Write("analysis/facts/source.yaml", """
+      table:
+        title: Source
+      source:
+        image: source.png
+      line_items:
+        revenue:
+          label: Revenue
+          image_regions:
+            2024: { x: 1400, y: 200, width: 280, height: 40 }
+      """);
+
+    // Act
+    string html = HtmlExport.Build(fixture.Root, fixture.Assets);
+
+    // Assert
+    using SKBitmap decoded = SKBitmap.Decode(Embedded(html, "image/webp"));
+    (decoded.Width, decoded.Height).ShouldBe((1400, 500));
+    JsonElement[] regions = Regions(Snapshot(html).GetProperty("views")).ToArray();
+    regions.ShouldNotBeEmpty();
+    regions.ShouldAllBe(region => region.GetRawText() == """{"x":700,"y":100,"width":140,"height":20}""");
+  }
+
+  [Fact]
   public void InlinesThePageInsteadOfLinkingIt()
   {
     // Arrange
@@ -223,6 +254,17 @@ public class HtmlExportTests
         .SelectMany(property => NullPaths(property.Value, $"{path}.{property.Name}")),
       JsonValueKind.Array => element.EnumerateArray().SelectMany((item, index) => NullPaths(item, $"{path}[{index}]")),
       _ => Enumerable.Empty<string>()
+    };
+  }
+
+  private static IEnumerable<JsonElement> Regions(JsonElement element)
+  {
+    return element.ValueKind switch
+    {
+      JsonValueKind.Object => element.EnumerateObject().SelectMany(property =>
+        property.Name == "region" ? new[] { property.Value } : Regions(property.Value)),
+      JsonValueKind.Array => element.EnumerateArray().SelectMany(Regions),
+      _ => Enumerable.Empty<JsonElement>()
     };
   }
 
