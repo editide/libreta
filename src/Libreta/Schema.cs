@@ -181,6 +181,7 @@ public class FormatSpec
   public string Suffix { get; set; } = "";
   public string Negative { get; set; } = "parentheses";
   public string? Date { get; set; }
+  public bool Text { get; set; }
 }
 
 public class ViewRow

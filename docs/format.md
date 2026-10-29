@@ -156,6 +156,7 @@ operating_income,-3505,466,-2589
 The files contain unformatted numbers rather than display strings such as `$125.0m`.
 Numeric literals and CSV values use a dot as the decimal separator regardless of the machine’s locale.
 A CSV value may instead be an ISO date such as `2025-12-31`, which makes the whole row a [date line](#dates); a row mixing dates and numbers is an error.
+A line whose units format [text](#text) holds each cell as printed, such as a credit rating.
 
 `-`, `–`, and `—` count as zero while retaining their distinction from a printed `0` in source provenance.
 `formats.yaml` controls the displayed dash.
@@ -418,6 +419,29 @@ formulas:
 A line holding dates needs units whose format sets [`date`](#formats), and a line holding numbers must not have one, so a formula yielding a date declares `units: date`.
 A cell override's `value` is always a number, so the first period of a stepped date line is an override `formula`, such as `eomonth(valuation_date, 12)`.
 Misuse surfaces once the cell's inputs resolve, as `--check` and the page report it.
+
+### Text
+
+A label the source prints, such as a credit rating, is a fact like any figure, with its source and its region on the image:
+
+```csv
+line_item,FY2024,FY2025
+moodys,Ba3,Ba2
+```
+
+```yaml
+# ratings.yaml
+defaults:
+  units: text
+```
+
+Units whose format sets [`text`](#formats), such as the built-in `text`, make a line hold text, and they are the only way to: a line in other units fails at the first cell that is not a number or a date.
+Every cell of a text line is kept as printed, a dash or a number included, and shows as written.
+The CSV splits on commas, so a cell cannot contain one.
+
+No formula or check reads a text line, and one that does is an error naming the line.
+A calculated column leaves a text line empty rather than reading it.
+`sign: contra`, `printed: negated` and `missing: zero` describe numbers, so any of them on a text line is an error, as is a number in text units, such as a cell override's `value`.
 
 ## Calculated columns and cell overrides
 
@@ -716,7 +740,7 @@ sensitivities: [equity_value]
 A fact or formula declares its `units`, and the matching format decides scaling, decimals, separators, symbols, and how a negative is shown.
 Every unit used for display must have a matching format; an unknown unit reports an error.
 
-Libreta has built-in formats for `percent`, `times`, `ratio`, `dollars` and `date`; see [src/Libreta/formats.yaml](../src/Libreta/formats.yaml).
+Libreta has built-in formats for `percent`, `times`, `ratio`, `dollars`, `date` and `text`; see [src/Libreta/formats.yaml](../src/Libreta/formats.yaml).
 A book needs no `formats.yaml` of its own until it uses another unit or wants to differ:
 
 ```yaml
@@ -737,6 +761,7 @@ Each key below `formats` names a unit and accepts these properties:
 - `prefix` and `suffix` surround the magnitude with text such as `$` or `%`.
 - `negative` is `parentheses` to render `(125)` or `minus` to render `-125`.
 - `date` renders the value as a date with a .NET pattern such as `yyyy-MM-dd`, ignoring every other property; the inspector's exact value is the ISO date rather than its day count.
+- `text: true` makes a line in these units hold [text](#text), shown as printed, ignoring every other property.
 
 `defaults` accepts the same properties and supplies them to every unit that does not set them.
 Properties nothing sets use `scale: 1`, `decimals: 0`, `separator: true`, empty `prefix` and `suffix`, and `negative: parentheses`.
