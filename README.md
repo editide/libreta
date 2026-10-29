@@ -87,6 +87,7 @@ For the agent, a CLI:
 - `libreta --value` returns any cell's value, its formula, what it reads and what reads it, as JSON.
 - `libreta --lines` returns many lines at once by qualified name, for a tool such as a slide deck quoting the book.
 - `libreta --check` runs every check, such as subtotals matching the printed totals or the balance sheet balancing.
+- `libreta --set-regions` records where each value sits in a fact table's source image, as measured by a browser script, PDF reader or OCR, and `--check` reports values a captured table leaves unboxed.
 
 For you, a live page in the browser:
 
@@ -173,7 +174,7 @@ dotnet watch --project src/Libreta run -- books/spacex
 ```
 
 `./scripts/install-from-source.sh` makes your build the `libreta` on `PATH`, and the installer puts a release back.
-On WSL, `./scripts/install-windows-from-wsl.sh [folder]` publishes your build for Windows to `%USERPROFILE%\dev\libreta`, or the folder given, for Windows apps that can't reach WSL.
+On WSL, `./scripts/install-windows-from-wsl.sh [folder]` publishes your build for Windows to `libreta` in `%USERPROFILE%\dev`, or in the folder given, for Windows apps that can't reach WSL.
 [AGENTS.md](AGENTS.md) holds the vocabulary and conventions, for people and coding agents alike.
 
 ## Status

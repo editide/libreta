@@ -617,9 +617,7 @@ public static class PayloadBuilder
     bool linked = resolvedScope is not null && resolvedScope != scope;
     string? column = resolved is null
       ? null
-      : reference.Column is null
-        ? cell.Column
-        : view.Book.CoordinateColumn(reference.Column, scope, resolved);
+      : view.Book.ReferenceColumn(reference.Column, cell.Column, scope, resolved);
     string? sourceView = resolved is null || !linked
       ? null
       : view.Book.PresentingView(resolved, column, view.Id, LinkedView(view, resolvedScope, scope));
@@ -904,7 +902,7 @@ public static class PayloadBuilder
           view,
           engine,
           dependency,
-          reference.Column is null ? column : view.Book.CoordinateColumn(reference.Column, scope, dependency),
+          view.Book.ReferenceColumn(reference.Column, column, scope, dependency),
           scope,
           presentation,
           expansionPath));

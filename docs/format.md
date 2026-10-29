@@ -278,8 +278,11 @@ Do not resize or replace the image after recording regions because its coordinat
 
 Map the complete printed value, including commas, decimal points, minus signs, or parentheses, rather than a nearby cell or the whole row.
 Obtain coordinates from browser, PDF, OCR, or image-selection tooling rather than estimating them by eye.
+Measure from the image's top-left corner at its scale: a page captured at 2× device scale or cropped from a larger page needs its coordinates multiplied and offset to match, or every outline lands in the wrong place without any error.
+Have the measuring tool read back the text inside each region and compare it with the fact, because an outline on the neighboring row or period is just as valid to `--check`.
 After adding a region, verify in the modal that its outline identifies both the intended row and period, especially when the same value appears more than once.
 Map every fact taken from one captured table, so the table behaves consistently.
+`--check` reports any fact left unmapped, and `--set-regions` records regions a tool measured; see [running.md](running.md#record-source-regions).
 
 ## The two sign conventions
 
@@ -364,7 +367,7 @@ formulas:
     formula: historical.revenue["2025"] - historical.revenue["2023"]
 ```
 
-A formula whose every reference names its column has the same value in every column of its folder, so in a folder of periods it repeats one figure under each, and `--check` reports it as a repeated line.
+A formula whose every reference names its column has the same value in every column of its folder, so in a folder of periods it repeats one figure under each, and `--check` reports it as a repeated line unless cell overrides take all but one of the columns.
 
 ### Operators and functions
 
@@ -443,6 +446,7 @@ A calculated-column `note` describes the column method and appears when inspecti
 `applies_to` is `all` by default, so the column formula lands on every line, which suits a growth rate or a change.
 Set it to `facts` for a column that is itself a period, such as a last-twelve-months bridge.
 Fact lines are then bridged by the column formula, and calculated lines evaluate their own formula in that column, so a margin divides bridged profit by bridged revenue rather than bridging the margins.
+Another folder reading such a line in a column of the same name gets the bridged value, so `results.revenue` fills an `LTM` column elsewhere without naming `results.revenue["LTM"]`.
 
 ```yaml
 column_formulas:

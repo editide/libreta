@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using YamlDotNet.Serialization;
@@ -39,6 +40,8 @@ public class FactCell
   public string SourceImage { get; set; } = "";
   public SourceRegion? SourceRegion { get; set; }
   public string SourcePath { get; set; } = "";
+  /// <summary>The line as its table names it, the key its <c>line_items</c> entry uses.</summary>
+  public string SourceLine { get; set; } = "";
 }
 
 public class Formula
@@ -512,6 +515,23 @@ public class Book
     return ResolveCoordinateColumn(name, scope, line) ?? ResolveColumnOrPeriod(name, scope);
   }
 
+  /// <summary>The column a reference reads: the one it names, or else the reader's own. A period the reader merely
+  /// shares by name may be a calculated column where the line lives, such as an LTM bridged from facts.</summary>
+  [return: NotNullIfNotNull(nameof(written))]
+  [return: NotNullIfNotNull(nameof(column))]
+  public string? ReferenceColumn(string? written, string? column, string scope, string line)
+  {
+    if (written is not null)
+    {
+      return CoordinateColumn(written, scope, line);
+    }
+    if (column is null || ColumnFormulas.ContainsKey(column))
+    {
+      return column;
+    }
+    return ResolveCoordinateColumn(column, scope, line) ?? column;
+  }
+
   public List<string> ColumnsInRange(string line, string start, string end)
   {
     string scope = Formulas.TryGetValue(line, out Formula? formula)
@@ -833,7 +853,8 @@ public class Book
           Source = metadata.Source,
           SourceImage = sourceImage,
           SourceRegion = sourceRegions.GetValueOrDefault(period),
-          SourcePath = csvPath
+          SourcePath = csvPath,
+          SourceLine = localName
         };
       }
     }

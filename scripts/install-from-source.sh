@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+# Builds Libreta in place and links it onto PATH. A Debug build serves wwwroot from source, so only changes to the C#
+# need a rebuild.
 set -euo pipefail
 
 repository="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-application_directory="${LIBRETA_INSTALL_DIR:-${HOME}/.local/lib/libreta}"
 command_directory="${LIBRETA_BIN_DIR:-${HOME}/.local/bin}"
 
 if command -v dotnet >/dev/null; then
@@ -14,12 +15,10 @@ else
   exit 1
 fi
 
-mkdir -p "${application_directory}" "${command_directory}"
-"${dotnet_command}" publish "${repository}/src/Libreta" \
-  --configuration Release \
-  --output "${application_directory}"
-ln -sfn "${application_directory}/Libreta" "${command_directory}/libreta"
-"${command_directory}/libreta" --help
+"${dotnet_command}" build "${repository}/src/Libreta" --configuration Debug
+mkdir -p "${command_directory}"
+ln -sfn "${repository}/src/Libreta/bin/Debug/net10.0/Libreta" "${command_directory}/libreta"
+"${command_directory}/libreta" --help >/dev/null
 
 echo
 echo "Installed ${command_directory}/libreta"

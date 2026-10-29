@@ -2786,6 +2786,10 @@ if (embedded) {
       el('export-menu').matches(':popover-open');
     if (leavesEmbeddedBook(event, overlayOpen)) window.parent.postMessage({ libreta: 'escape' }, '*');
   }, true);
+  // The page around the frame picks the theme, and the reader's own choice for Libreta stays stored.
+  window.addEventListener('message', (event) => {
+    if (event.source === window.parent && event.data?.pintura === 'theme') setTheme(event.data.theme, false);
+  });
 }
 document.addEventListener('click', restoreGridFocusAfterClick);
 

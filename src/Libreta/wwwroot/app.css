@@ -42,8 +42,8 @@
   --ok: var(--reference);
   --on-bad: var(--surface);
   --image-surface: #ffffff;
-  --tooltip: light-dark(var(--ink), #1a2640);
-  --tooltip-ink: light-dark(var(--surface), var(--ink));
+  --tooltip: var(--ink);
+  --tooltip-ink: var(--surface);
   --hover: color-mix(in oklab, var(--accent) 5%, var(--surface));
   --selected: light-dark(#eaf2ff, #192c45);
   --fact-soft: color-mix(in oklab, var(--fact) 10%, var(--surface));

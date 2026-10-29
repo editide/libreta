@@ -92,7 +92,7 @@ public record LinePayload
   public List<bool>? Unresolved { get; init; }
 }
 
-public enum HeadlessCommand { List, View, Value, Lines, Check, Export, Url }
+public enum HeadlessCommand { List, View, Value, Lines, Check, Export, Url, SetRegions }
 
 public enum DocumentationTopic { Index, Format, Running }
 
@@ -111,6 +111,9 @@ public class CommandLineOptions
   /// <summary>The caller opens the page itself, so the server opens no tab, and stops if no page comes.</summary>
   public bool NoOpen { get; private init; }
   public string? Output { get; private init; }
+  /// <summary>The fact table <c>--set-regions</c> writes, and the JSON file of regions it writes there.</summary>
+  public string? RegionsTable { get; private init; }
+  public string? RegionsFile { get; private init; }
   public bool Json { get; private init; }
   public bool Help { get; private init; }
   public DocumentationTopic? Documentation { get; private init; }
@@ -133,6 +136,8 @@ public class CommandLineOptions
     (string, string)? cell = null;
     bool noOpen = false;
     string? output = null;
+    string? regionsTable = null;
+    string? regionsFile = null;
     bool json = false;
     DocumentationTopic? documentation = null;
     for (int index = first; index < arguments.Length; index++)
@@ -193,6 +198,13 @@ public class CommandLineOptions
             throw new ArgumentException("--export writes a page (.html) or a workbook (.xlsx); name the file for one.");
           }
           break;
+        case "--set-regions":
+          RequireNoCommand(command, argument);
+          Require(arguments, index, 2);
+          command = HeadlessCommand.SetRegions;
+          regionsTable = arguments[++index];
+          regionsFile = arguments[++index];
+          break;
         case "--url":
           RequireNoCommand(command, argument);
           command = HeadlessCommand.Url;
@@ -229,9 +241,10 @@ public class CommandLineOptions
     if (command is not null && portSpecified)
     {
       throw new ArgumentException(
-        "--port cannot be combined with --list, --view, --value, --lines, --check, --export or --url.");
+        "--port cannot be combined with --list, --view, --value, --lines, --check, --export, --set-regions or --url.");
     }
-    if ((command is HeadlessCommand.Export or HeadlessCommand.Url || command is null && cell is null) && json)
+    if ((command is HeadlessCommand.Export or HeadlessCommand.Url or HeadlessCommand.SetRegions ||
+      command is null && cell is null) && json)
     {
       throw new ArgumentException("--json requires --list, --view, --value, --lines, --check or --cell.");
     }
@@ -260,6 +273,8 @@ public class CommandLineOptions
       Cell = cell,
       NoOpen = noOpen,
       Output = output,
+      RegionsTable = regionsTable,
+      RegionsFile = regionsFile,
       Json = json,
       Documentation = documentation
     };
@@ -279,6 +294,8 @@ public class CommandLineOptions
     writer.WriteLine("  libreta [<book-root>] --check [--json]");
     writer.WriteLine("  libreta [<book-root>] --export <file.html>   (the whole book as one self-contained page)");
     writer.WriteLine("  libreta [<book-root>] --export <file.xlsx>   (the whole book as a workbook, a sheet per view)");
+    writer.WriteLine("  libreta [<book-root>] --set-regions <table.yaml> <regions.json>   (a fact table's source image " +
+      "and regions, measured by another tool)");
     writer.WriteLine("  libreta [<book-root>] --url   (the address of the server already running the book)");
     writer.WriteLine("  libreta --docs [format|running]");
     writer.WriteLine();
@@ -301,8 +318,8 @@ public class CommandLineOptions
     if (command is not null)
     {
       throw new ArgumentException(
-        $"Use only one of --list, --view, --value, --lines, --check, --export or --url; found '{argument}' after " +
-        "another.");
+        $"Use only one of --list, --view, --value, --lines, --check, --export, --set-regions or --url; found " +
+        $"'{argument}' after another.");
     }
   }
 
@@ -384,6 +401,7 @@ public static class CellLink
   public static RequestedCell Resolve(Book book, string name, string column)
   {
     string line = book.Resolve(name, "") ?? throw new ArgumentException($"Unknown line '{name}'.");
+    column = book.CoordinateColumn(column, "", line);
     string view = book.PresentingView(line, column, "") ?? book.PresentingView(line, null, "") ??
       $"{View.LinePrefix}{line}";
     return new RequestedCell(view, line, column);
@@ -482,14 +500,14 @@ public static class HeadlessRunner
         views[scope] = scoped;
       }
       List<string> periods = book.PeriodsFor(scope);
-      // Calculated columns follow the periods, by the names a reference writes them with.
+      // Calculated columns follow the periods, by the names a reference writes them with; in a column that applies
+      // only to facts, a formula line evaluates its own formula, as a view shows it.
       List<(string Name, string Column)> calculated = book.ColumnFormulas.Values
         .Select(formula => formula.Key)
         .Distinct()
         .Where(key => !periods.Contains(key))
         .Select(key => (Name: key, Column: book.ResolveColumn(key, scope)))
-        .Where(column => column.Column is string resolved &&
-          (!book.ColumnFormulas[resolved].FactsOnly || fact is not null))
+        .Where(column => column.Column is not null)
         .Select(column => (column.Name, column.Column!))
         .ToList();
       List<string> columns = [.. periods, .. calculated.Select(column => column.Name)];
@@ -580,12 +598,15 @@ public static class HeadlessRunner
     int failed = checkedViews.Sum(view => view.Checks.Count(check => !check.Passed));
     int errors = checkedViews.Count(view => view.Error is not null);
     int missingLines = checkedViews.Sum(view => view.Missing.Count);
-    // A formula pinned to one column repeats its value under every column of its scope.
+    // A formula pinned to one column repeats its value under every column of its scope that no cell override takes.
     List<string> repeated = book.Formulas.Values
-      .Where(formula => Expr.Pinned(formula.Expression) && book.PeriodsFor(formula.Scope).Count > 1)
+      .Where(formula => Expr.Pinned(formula.Expression) &&
+        book.PeriodsFor(formula.Scope).Count(column => !book.CellOverrides.ContainsKey((formula.Name, column))) > 1)
       .Select(formula => formula.Name)
       .Order(StringComparer.Ordinal)
       .ToList();
+    // A fact its table's image shows without an outline sends a reviewer hunting, but the value itself is sound.
+    List<UnboxedFact> unboxed = SourceRegionWriter.Unboxed(book);
     bool ok = failed == 0 && errors == 0 && missingLines == 0;
 
     if (json)
@@ -599,7 +620,8 @@ public static class HeadlessRunner
           Errors = errors,
           MissingLines = missingLines,
           Views = checkedViews,
-          Repeated = repeated
+          Repeated = repeated,
+          Unboxed = unboxed
         },
         JsonOptions));
       return ok ? 0 : 1;
@@ -622,10 +644,15 @@ public static class HeadlessRunner
     {
       Console.WriteLine($"repeated line: {line}, the same in every column; move it to a folder of one column");
     }
+    foreach (IGrouping<string, UnboxedFact> table in unboxed.GroupBy(fact => fact.Table))
+    {
+      Console.WriteLine($"unboxed: {table.Key} {SourceRegionWriter.Summarize(table)}");
+    }
     Console.WriteLine();
     Console.WriteLine($"{passed + failed} checks in {checkedViews.Count} views: {passed} passed, {failed} failed, " +
       $"{errors} {Plural(errors, "view")} in error, {missingLines} missing {Plural(missingLines, "line")}" +
-      (repeated.Count == 0 ? "" : $", {repeated.Count} repeated {Plural(repeated.Count, "line")}"));
+      (repeated.Count == 0 ? "" : $", {repeated.Count} repeated {Plural(repeated.Count, "line")}") +
+      (unboxed.Count == 0 ? "" : $", {unboxed.Count} unboxed {Plural(unboxed.Count, "fact")}"));
     return ok ? 0 : 1;
   }
 

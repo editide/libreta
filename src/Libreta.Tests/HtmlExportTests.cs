@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Shouldly;
+using SkiaSharp;
 using Xunit;
 
 namespace Libreta.Tests;
@@ -33,6 +34,75 @@ public class HtmlExportTests
     // Assert
     JsonElement images = Snapshot(html).GetProperty("images");
     images.GetProperty("analysis/facts/source.png").GetString().ShouldBe("data:image/png;base64,AQID");
+  }
+
+  [Fact]
+  public void EmbedsAFlatImageAsWebpWithEveryPixelKept()
+  {
+    // Arrange
+    using StoreFixture fixture = Fixture("analysis");
+    using SKBitmap flat = Flat();
+    byte[] png = Encode(flat, SKEncodedImageFormat.Png, 100);
+    File.WriteAllBytes(fixture.SourceImage, png);
+
+    // Act
+    string html = HtmlExport.Build(fixture.Root, fixture.Assets);
+
+    // Assert
+    byte[] embedded = Embedded(html, "image/webp");
+    embedded.Length.ShouldBeLessThan(png.Length);
+    using SKBitmap decoded = SKBitmap.Decode(embedded);
+    decoded.Pixels.ShouldBe(flat.Pixels);
+  }
+
+  [Fact]
+  public void EmbedsAPhotographAsLossyWebp()
+  {
+    // Arrange
+    using StoreFixture fixture = Fixture("analysis");
+    using SKBitmap photograph = Photograph();
+    byte[] png = Encode(photograph, SKEncodedImageFormat.Png, 100);
+    File.WriteAllBytes(fixture.SourceImage, png);
+
+    // Act
+    string html = HtmlExport.Build(fixture.Root, fixture.Assets);
+
+    // Assert
+    byte[] embedded = Embedded(html, "image/webp");
+    embedded.Length.ShouldBeLessThan(png.Length / 4);
+    using SKBitmap decoded = SKBitmap.Decode(embedded);
+    (decoded.Width, decoded.Height).ShouldBe((400, 300));
+  }
+
+  [Fact]
+  public void EmbedsAWideImageNarrowerWithItsRegionsScaledToMatch()
+  {
+    // Arrange
+    using StoreFixture fixture = Fixture("analysis");
+    using SKBitmap wide = new SKBitmap(2800, 1000);
+    wide.Erase(SKColors.White);
+    File.WriteAllBytes(fixture.SourceImage, Encode(wide, SKEncodedImageFormat.Png, 100));
+    fixture.Write("analysis/facts/source.yaml", """
+      table:
+        title: Source
+      source:
+        image: source.png
+      line_items:
+        revenue:
+          label: Revenue
+          image_regions:
+            2024: { x: 1400, y: 200, width: 280, height: 40 }
+      """);
+
+    // Act
+    string html = HtmlExport.Build(fixture.Root, fixture.Assets);
+
+    // Assert
+    using SKBitmap decoded = SKBitmap.Decode(Embedded(html, "image/webp"));
+    (decoded.Width, decoded.Height).ShouldBe((1400, 500));
+    JsonElement[] regions = Regions(Snapshot(html).GetProperty("views")).ToArray();
+    regions.ShouldNotBeEmpty();
+    regions.ShouldAllBe(region => region.GetRawText() == """{"x":700,"y":100,"width":140,"height":20}""");
   }
 
   [Fact]
@@ -185,6 +255,70 @@ public class HtmlExportTests
       JsonValueKind.Array => element.EnumerateArray().SelectMany((item, index) => NullPaths(item, $"{path}[{index}]")),
       _ => Enumerable.Empty<string>()
     };
+  }
+
+  private static IEnumerable<JsonElement> Regions(JsonElement element)
+  {
+    return element.ValueKind switch
+    {
+      JsonValueKind.Object => element.EnumerateObject().SelectMany(property =>
+        property.Name == "region" ? new[] { property.Value } : Regions(property.Value)),
+      JsonValueKind.Array => element.EnumerateArray().SelectMany(Regions),
+      _ => Enumerable.Empty<JsonElement>()
+    };
+  }
+
+  private static byte[] Embedded(string html, string type)
+  {
+    string image = Snapshot(html).GetProperty("images").GetProperty("analysis/facts/source.png").GetString()!;
+    image.ShouldStartWith($"data:{type};base64,");
+    return Convert.FromBase64String(image[(image.IndexOf(',') + 1)..]);
+  }
+
+  /// <summary>Flat colors and hard edges, which a lossless encoding keeps exactly at less than the lossy size.</summary>
+  private static SKBitmap Flat()
+  {
+    var bitmap = new SKBitmap(400, 300);
+    using var canvas = new SKCanvas(bitmap);
+    canvas.Clear(SKColors.White);
+    using var ink = new SKPaint { Color = new SKColor(0x22, 0x22, 0x22) };
+    var random = new Random(7);
+    for (int line = 0; line < 20; line++)
+    {
+      for (int x = 10; x < 390; x += random.Next(3, 9))
+      {
+        canvas.DrawRect(x, 10 + line * 14, random.Next(1, 3), random.Next(4, 9), ink);
+      }
+    }
+    return bitmap;
+  }
+
+  /// <summary>Smooth color with grain, which a lossy encoding shrinks far more than a lossless one.</summary>
+  private static SKBitmap Photograph()
+  {
+    var bitmap = new SKBitmap(400, 300);
+    var random = new Random(7);
+    for (int y = 0; y < bitmap.Height; y++)
+    {
+      for (int x = 0; x < bitmap.Width; x++)
+      {
+        int grain = random.Next(-12, 13);
+        bitmap.SetPixel(x, y, new SKColor(Channel(x * 255 / 400 + grain), Channel(y * 255 / 300 + grain),
+          Channel(160 + grain)));
+      }
+    }
+    return bitmap;
+  }
+
+  private static byte Channel(int value)
+  {
+    return (byte)Math.Clamp(value, 0, 255);
+  }
+
+  private static byte[] Encode(SKBitmap bitmap, SKEncodedImageFormat format, int quality)
+  {
+    using SKData data = bitmap.Encode(format, quality);
+    return data.ToArray();
   }
 
   private static StoreFixture Fixture(string navigation)

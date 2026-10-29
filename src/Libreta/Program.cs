@@ -114,6 +114,25 @@ if (options.Command == HeadlessCommand.Export)
   }
 }
 
+if (options.Command == HeadlessCommand.SetRegions)
+{
+  try
+  {
+    SourceRegionResult result = SourceRegionWriter.Write(root, options.RegionsTable!, options.RegionsFile!);
+    Console.WriteLine($"  wrote {result.Regions} regions to {options.RegionsTable}");
+    if (result.Unboxed.Count > 0)
+    {
+      Console.WriteLine($"  unboxed: {SourceRegionWriter.Summarize(result.Unboxed)}");
+    }
+    return 0;
+  }
+  catch (Exception exception)
+  {
+    Console.Error.WriteLine(exception.Message);
+    return 1;
+  }
+}
+
 if (options.Command is not null)
 {
   try
