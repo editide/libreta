@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using SkiaSharp;
 
 namespace Libreta;
 
@@ -60,8 +61,10 @@ public static class HtmlExport
       views[view.Id] = PayloadBuilder.Build(view, new Engine(view), 1);
       lines[line] = new PresentedLine(view.Id, null);
     }
-    Dictionary<string, string> images = BookStore.SourceImages(book)
-      .ToDictionary(image => image, image => DataUri(Path.Combine(root, image)));
+    // Encoding the source images is the slow part of the export, so they're encoded at the same time.
+    Dictionary<string, string> images = BookStore.SourceImages(book).AsParallel()
+      .Select(image => (Image: image, Uri: SourceImageUri(Path.Combine(root, image))))
+      .ToDictionary(image => image.Image, image => image.Uri);
     return new BookSnapshotPayload(catalog, views, images, lines, DateTimeOffset.Now);
   }
 
@@ -83,6 +86,42 @@ public static class HtmlExport
     string contentType = BookStore.ImageContentType(path)
       ?? throw new InvalidDataException($"not an image the page can show: {path}");
     return $"data:{contentType};base64,{Convert.ToBase64String(File.ReadAllBytes(path))}";
+  }
+
+  private static string SourceImageUri(string path)
+  {
+    string contentType = BookStore.ImageContentType(path)
+      ?? throw new InvalidDataException($"not an image the page can show: {path}");
+    byte[] original = File.ReadAllBytes(path);
+    byte[]? webp = contentType is "image/png" or "image/jpeg" ? WebP(original) : null;
+    return webp is not null && webp.Length < original.Length
+      ? $"data:image/webp;base64,{Convert.ToBase64String(webp)}"
+      : $"data:{contentType};base64,{Convert.ToBase64String(original)}";
+  }
+
+  /// <summary>Lossless when that costs at most twice the lossy size, as flat colors and hard edges such as a chart's
+  /// do; lossy otherwise, as for a photograph or a page of small text. Skia encodes lossless at libwebp's fastest
+  /// method, which a detailed picture outgrows.</summary>
+  private static byte[]? WebP(byte[] picture)
+  {
+    using SKCodec? codec = SKCodec.Create(new SKMemoryStream(picture));
+    // Browsers turn a photo by its EXIF orientation and draw a wide-gamut one in its own colors, and WebP would keep
+    // neither.
+    if (codec is null || codec.EncodedOrigin != SKEncodedOrigin.TopLeft || codec.Info.ColorSpace is { IsSrgb: false })
+    {
+      return null;
+    }
+    // Unpremultiplied, so lossless keeps a translucent pixel's color exactly.
+    using SKBitmap? bitmap = SKBitmap.Decode(codec, codec.Info.WithAlphaType(
+      codec.Info.AlphaType == SKAlphaType.Opaque ? SKAlphaType.Opaque : SKAlphaType.Unpremul));
+    if (bitmap is null)
+    {
+      return null;
+    }
+    using SKPixmap pixmap = bitmap.PeekPixels();
+    using SKData lossless = pixmap.Encode(new SKWebpEncoderOptions(SKWebpEncoderCompression.Lossless, 25));
+    using SKData lossy = pixmap.Encode(new SKWebpEncoderOptions(SKWebpEncoderCompression.Lossy, 80));
+    return (lossless.Size <= 2 * lossy.Size ? lossless : lossy).ToArray();
   }
 
   private static string InlineFonts(string css, string assets)

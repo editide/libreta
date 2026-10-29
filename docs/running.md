@@ -193,6 +193,7 @@ libreta books/spacex --export spacex.html
 ```
 
 The page carries every view, its calculations and provenance, and the source images, so it works offline and attached to an email.
+A PNG or JPEG source image goes in as WebP when that's smaller: lossless where that costs at most twice the lossy size, as for a chart, and lossy otherwise, as for a photograph or a screenshot.
 It is a snapshot: it never reloads, and the status bar shows the date it was exported.
 The export refuses a book with a view that fails to load, rather than sharing a broken page.
 
