@@ -107,15 +107,27 @@ public class InstanceRegistry
       return false;
     }
 
-    using var client = new TcpClient();
+    // Polled rather than awaited: an awaited connect also waits for a free pool thread, so a busy process would take a
+    // live server for dead and forget it. The timeout covers Windows, which retries a refused loopback connect.
+    using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { Blocking = false };
     try
     {
-      return client.ConnectAsync(IPAddress.Loopback, instance.Port).Wait(ConnectTimeout);
+      socket.Connect(IPAddress.Loopback, instance.Port);
+      return true;
     }
-    catch (AggregateException)
+    catch (SocketException exception) when (exception.SocketErrorCode == SocketError.WouldBlock)
+    {
+    }
+    catch (SocketException)
     {
       return false;
     }
+    if (!socket.Poll(ConnectTimeout, SelectMode.SelectWrite))
+    {
+      return false;
+    }
+    object error = socket.GetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Error)!;
+    return (SocketError)(int)error == SocketError.Success;
   }
 
   private static void TryDelete(string path)
