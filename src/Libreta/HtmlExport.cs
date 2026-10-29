@@ -28,9 +28,9 @@ public static class HtmlExport
   /// a capture at twice that.</summary>
   private const int MaxImageWidth = 1400;
 
-  public static string Build(string root, string assets)
+  public static string Build(string root, string assets, PictureCache? pictures = null)
   {
-    (BookSnapshotPayload snapshot, Dictionary<string, double> scales) = Snapshot(root);
+    (BookSnapshotPayload snapshot, Dictionary<string, double> scales) = Snapshot(root, pictures ?? PictureCache.User);
     JsonNode json = JsonSerializer.SerializeToNode(snapshot, PayloadJson.Options)!;
     ScaleRegions(json["views"]!, scales);
     string script = File.ReadAllText(Path.Combine(assets, "app.js"));
@@ -52,7 +52,8 @@ public static class HtmlExport
   }
 
   /// <summary>The snapshot, and how much each source image was scaled to embed it.</summary>
-  private static (BookSnapshotPayload Snapshot, Dictionary<string, double> Scales) Snapshot(string root)
+  private static (BookSnapshotPayload Snapshot, Dictionary<string, double> Scales) Snapshot(string root,
+    PictureCache pictures)
   {
     Book book = Book.Load(root);
     ViewCatalog catalog = CatalogLoader.Load(book, 1);
@@ -71,7 +72,7 @@ public static class HtmlExport
     }
     // Encoding the source images is the slow part of the export, so they're encoded at the same time.
     Dictionary<string, (string Uri, double Scale)> images = BookStore.SourceImages(book).AsParallel()
-      .Select(image => (Image: image, Embedded: SourceImage(Path.Combine(root, image))))
+      .Select(image => (Image: image, Embedded: SourceImage(Path.Combine(root, image), pictures)))
       .ToDictionary(image => image.Image, image => image.Embedded);
     return (new BookSnapshotPayload(catalog, views, images.ToDictionary(image => image.Key, image => image.Value.Uri),
       lines, DateTimeOffset.Now), images.ToDictionary(image => image.Key, image => image.Value.Scale));
@@ -128,21 +129,30 @@ public static class HtmlExport
     return $"data:{contentType};base64,{Convert.ToBase64String(File.ReadAllBytes(path))}";
   }
 
-  private static (string Uri, double Scale) SourceImage(string path)
+  private static (string Uri, double Scale) SourceImage(string path, PictureCache pictures)
   {
     string contentType = BookStore.ImageContentType(path)
       ?? throw new InvalidDataException($"not an image the page can show: {path}");
     byte[] original = File.ReadAllBytes(path);
-    (byte[] Bytes, double Scale)? webp = contentType is "image/png" or "image/jpeg" ? WebP(original) : null;
-    return webp is { } smaller && smaller.Bytes.Length < original.Length
-      ? ($"data:image/webp;base64,{Convert.ToBase64String(smaller.Bytes)}", smaller.Scale)
+    byte[]? webp = contentType is "image/png" or "image/jpeg"
+      ? pictures.Get(original, "webp", () => WebP(original))
+      : null;
+    return webp is not null && webp.Length < original.Length
+      ? ($"data:image/webp;base64,{Convert.ToBase64String(webp)}", Scale(original))
       : ($"data:{contentType};base64,{Convert.ToBase64String(original)}", 1);
+  }
+
+  /// <summary>How much <see cref="WebP"/> narrows a picture, read from its header without decoding it.</summary>
+  private static double Scale(byte[] picture)
+  {
+    using SKCodec codec = SKCodec.Create(new SKMemoryStream(picture));
+    return Math.Min(1, (double)MaxImageWidth / codec.Info.Width);
   }
 
   /// <summary>Lossless when that costs at most twice the lossy size, as flat colors and hard edges such as a chart's
   /// do; lossy otherwise, as for a photograph or a page of small text. Skia encodes lossless at libwebp's fastest
   /// method, which a detailed picture outgrows.</summary>
-  private static (byte[] Bytes, double Scale)? WebP(byte[] picture)
+  private static byte[]? WebP(byte[] picture)
   {
     using SKCodec? codec = SKCodec.Create(new SKMemoryStream(picture));
     // Browsers turn a photo by its EXIF orientation and draw a wide-gamut one in its own colors, and WebP would keep
@@ -164,7 +174,7 @@ public static class HtmlExport
     using SKPixmap pixmap = (narrower ?? bitmap).PeekPixels();
     using SKData lossless = pixmap.Encode(new SKWebpEncoderOptions(SKWebpEncoderCompression.Lossless, 25));
     using SKData lossy = pixmap.Encode(new SKWebpEncoderOptions(SKWebpEncoderCompression.Lossy, 80));
-    return ((lossless.Size <= 2 * lossy.Size ? lossless : lossy).ToArray(), scale);
+    return (lossless.Size <= 2 * lossy.Size ? lossless : lossy).ToArray();
   }
 
   private static string InlineFonts(string css, string assets)

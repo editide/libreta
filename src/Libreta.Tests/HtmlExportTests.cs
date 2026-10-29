@@ -106,6 +106,38 @@ public class HtmlExportTests
   }
 
   [Fact]
+  public void AWideImageReadFromThePictureCacheKeepsItsRegionsScaled()
+  {
+    // Arrange
+    using StoreFixture fixture = Fixture("analysis");
+    using var cache = new TempFolder();
+    using SKBitmap wide = new SKBitmap(2800, 1000);
+    wide.Erase(SKColors.White);
+    File.WriteAllBytes(fixture.SourceImage, Encode(wide, SKEncodedImageFormat.Png, 100));
+    fixture.Write("analysis/facts/source.yaml", """
+      table:
+        title: Source
+      source:
+        image: source.png
+      line_items:
+        revenue:
+          label: Revenue
+          image_regions:
+            2024: { x: 1400, y: 200, width: 280, height: 40 }
+      """);
+    string first = HtmlExport.Build(fixture.Root, fixture.Assets, new PictureCache(cache.PathTo("pictures")));
+
+    // Act
+    string again = HtmlExport.Build(fixture.Root, fixture.Assets, new PictureCache(cache.PathTo("pictures")));
+
+    // Assert
+    Embedded(again, "image/webp").ShouldBe(Embedded(first, "image/webp"));
+    JsonElement[] regions = Regions(Snapshot(again).GetProperty("views")).ToArray();
+    regions.ShouldNotBeEmpty();
+    regions.ShouldAllBe(region => region.GetRawText() == """{"x":700,"y":100,"width":140,"height":20}""");
+  }
+
+  [Fact]
   public void InlinesThePageInsteadOfLinkingIt()
   {
     // Arrange
