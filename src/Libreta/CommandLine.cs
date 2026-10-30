@@ -118,6 +118,7 @@ public class CommandLineOptions
   public string? RegionsFile { get; private init; }
   public bool Json { get; private init; }
   public bool Help { get; private init; }
+  public bool Version { get; private init; }
   public DocumentationTopic? Documentation { get; private init; }
 
   public static CommandLineOptions Parse(string[] arguments)
@@ -242,6 +243,9 @@ public class CommandLineOptions
         case "--help":
         case "-h":
           return new CommandLineOptions { Help = true };
+        case "--version":
+        case "-v":
+          return new CommandLineOptions { Version = true };
         default:
           throw new ArgumentException($"Unknown option '{argument}'.");
       }
@@ -311,6 +315,7 @@ public class CommandLineOptions
       "and outlined, to read back against its value)");
     writer.WriteLine("  libreta [<book-root>] --url   (the address of the server already running the book)");
     writer.WriteLine("  libreta --docs [format|running]");
+    writer.WriteLine("  libreta --version");
     writer.WriteLine();
     writer.WriteLine("without a book root, the one book up to three folders below the working folder");
     writer.WriteLine("the server opens a browser tab, reuses one already serving the book, and stops with no tab open");

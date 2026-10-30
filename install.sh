@@ -31,13 +31,19 @@ trap 'rm -rf "${temporary}"' EXIT
 echo "Downloading ${release_url}/${archive}"
 curl -fsSL "${release_url}/${archive}" -o "${temporary}/${archive}"
 tar -xzf "${temporary}/${archive}" -C "${temporary}"
+if [ "${platform}" = osx ]; then
+  xattr -dr com.apple.quarantine "${temporary}/libreta" 2>/dev/null || true
+fi
+
+# The new build runs once where it was unpacked, so one that won't run on this machine leaves the installed one alone.
+if ! "${temporary}/libreta/libreta" --help >/dev/null 2>&1; then
+  echo "The downloaded Libreta doesn't run on this machine, so the installed one is left as it was." >&2
+  exit 1
+fi
 
 mkdir -p "$(dirname "${application_directory}")" "${command_directory}"
 rm -rf "${application_directory}"
 mv "${temporary}/libreta" "${application_directory}"
-if [ "${platform}" = osx ]; then
-  xattr -dr com.apple.quarantine "${application_directory}" 2>/dev/null || true
-fi
 ln -sfn "${application_directory}/libreta" "${command_directory}/libreta"
 "${command_directory}/libreta" --help >/dev/null
 

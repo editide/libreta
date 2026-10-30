@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Libreta is a financial modeling tool: a local web app that renders statements from plain-text books under `books/`.
+Libreta keeps spreadsheets as plain text: a local web app that renders tables from plain-text books under `books/`.
 
 ## Running it
 

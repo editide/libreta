@@ -30,7 +30,7 @@ jobs:
           dotnet publish src/Libreta --configuration Release --runtime ${{ matrix.runtime }} --self-contained
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none
           -p:PublishTrimmed=true -p:PublishReadyToRun=true -p:JsonSerializerIsReflectionEnabledByDefault=true
-          --output out/libreta
+          -p:Version=${GITHUB_REF_NAME#v} --output out/libreta
       - name: Package
         run: |
           cp LICENSE NOTICE out/libreta/

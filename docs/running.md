@@ -3,7 +3,7 @@
 Libreta provides a local review server for humans and headless commands for agents and scripts.
 
 Book commands accept a book root—the folder containing `book.yaml`—before any options.
-`--help` and `--docs` work without a book.
+`--help`, `--version` and `--docs` work without a book.
 
 ## Read the documentation from the command line
 
@@ -211,6 +211,7 @@ libreta books/spacex --export spacex.html
 The page carries every view, its calculations and provenance, and the source images, so it works offline and attached to an email.
 A PNG or JPEG source image goes in as WebP when that's smaller: lossless where that costs at most twice the lossy size, as for a chart, and lossy otherwise, as for a photograph or a screenshot.
 One wider than 1400 pixels goes in at that width, with its regions scaled to match, which keeps a filing captured at twice its size sharp zoomed in at half the bytes.
+Each encoding is kept in the user's cache folder (`~/.cache/libreta/pictures` on Linux) by a hash of the image and of Libreta's build, so exporting again encodes only the images that changed, and a new build encodes them all afresh; one unused for a month is deleted.
 It is a snapshot: it never reloads, and the status bar shows the date it was exported.
 The export refuses a book with a view that fails to load, rather than sharing a broken page.
 
