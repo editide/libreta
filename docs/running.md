@@ -44,6 +44,9 @@ A line no view presents opens on a page of its own, above the lines its formula 
 When a server already runs the book with a page open, that page selects the cell instead of a new tab opening.
 Browsers keep a page from bringing its own tab forward, so a page in a background tab selects the cell there.
 
+A window narrower than about 830 pixels has no room beside the table, so the views' list opens over it from its button and closes on a pick, and the inspector docks below it.
+On a phone, or another touch screen that narrow, a selected cell's inspector covers the whole window instead, with a top bar that names the view and goes back to the table, as the browser's back does after a tap on the table; following a number under **Used by** or in a formula steps forward, which back undoes.
+
 A tool that can bring a tab forward, such as a page whose click opened the book's tab, opens the page itself:
 
 ```bash

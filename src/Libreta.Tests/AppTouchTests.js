@@ -19,6 +19,7 @@ function press(pointerType) {
     selectInGrid: () => { calls.selected = true; },
     selectionFor: () => null,
     syncGridSelection: () => {},
+    enterInspector: () => {},
     requestAnimationFrame: () => 0,
     document: { body: { classList: { add() {} } } }
   };

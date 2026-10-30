@@ -49,7 +49,11 @@ let shortcutTimer = null;
 let inspectorDock = stored('inspectorDock') === 'bottom' ? 'bottom' : 'right';
 let uiScale = Number(stored('uiScale')) || 100;
 let theme = stored('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-let navigationVisible = !embedded && stored('navigationVisible') !== 'false';
+const compactLayout = window.matchMedia('(max-width: 52rem)');
+// app.css's phone layout, whose inspector covers the table.
+const phoneLayout = window.matchMedia('(max-width: 52rem) and (pointer: coarse)');
+// A phone has no room beside the table, so its navigation opens over it, and only when asked.
+let navigationVisible = !embedded && !compactLayout.matches && stored('navigationVisible') !== 'false';
 let checksExpanded = null;
 const requests = new RequestCoordinator();
 const branchStates = new Map();
@@ -64,7 +68,6 @@ let historyEntry = history.state?.entry ?? newHistoryEntry();
 let sourceImageZoom = SOURCE_IMAGE_ZOOM_MIN;
 let sourceImageFitWidth = 0;
 let sourceImageFitHeight = 0;
-const compactLayout = window.matchMedia('(max-width: 52rem)');
 // Kinds of an axis entry that names a line, as opposed to a book or a period.
 const LINE_KINDS = new Set(['fact', 'formula', 'missing', 'metric']);
 // Selection row index meaning "the whole column".
@@ -125,7 +128,7 @@ function setTheme(next, persist = true) {
   if (persist) store('theme', theme);
 }
 
-function setNavigationVisible(visible, persist = !embedded) {
+function setNavigationVisible(visible, persist = !embedded && !compactLayout.matches) {
   navigationVisible = visible;
   document.querySelector('.layout').classList.toggle('nav-hidden', !visible);
   const toggle = el('nav-toggle');
@@ -410,9 +413,7 @@ function renderTreeChildren(container, node) {
       if (active) button.setAttribute('aria-current', 'page');
       button.setAttribute('aria-selected', String(active));
       button.tabIndex = active ? 0 : -1;
-      button.addEventListener('click', async () => {
-        await openView(child.view.id);
-      });
+      button.addEventListener('click', () => selectNavigationView(button));
       row.appendChild(button);
     } else {
       const label = document.createElement('div');
@@ -614,8 +615,12 @@ function render() {
     cell.setAttribute('aria-label', `${columns[periodIndex].label} overview`);
     cell.addEventListener('pointerdown', (event) => beginCellRangePointer(event, COLUMN_AXIS, periodIndex));
     cell.addEventListener('click', () => {
-      if (suppressCellClick) suppressCellClick = false;
-      else selectColumn(periodIndex, true);
+      if (suppressCellClick) {
+        suppressCellClick = false;
+        return;
+      }
+      enterInspector();
+      selectColumn(periodIndex, true);
     });
     cell.addEventListener('keydown', (event) => handleGridKey(event, COLUMN_AXIS, periodIndex));
   });
@@ -656,8 +661,12 @@ function render() {
         : `${row.label}, ${columns[periodIndex].label}, ${row.cells[periodIndex].display}`);
       cell.addEventListener('pointerdown', (event) => beginCellRangePointer(event, index, periodIndex));
       cell.addEventListener('click', (event) => {
-        if (suppressCellClick) suppressCellClick = false;
-        else if (isRowLabel) selectRow(index, true);
+        if (suppressCellClick) {
+          suppressCellClick = false;
+          return;
+        }
+        enterInspector();
+        if (isRowLabel) selectRow(index, true);
         else if (event.shiftKey) extendCellRange(index, periodIndex, true);
         else inspectCell(index, periodIndex);
       });
@@ -719,7 +728,10 @@ function renderSensitivities() {
         td.setAttribute('aria-label', `${assumptions}; ${sensitivity.outputLabel}: ${cell.display}`);
         td.setAttribute('aria-selected', 'false');
         td.title = `${assumptions}\n${sensitivity.outputLabel}: ${exactOutput}`;
-        td.addEventListener('click', () => selectSensitivityCell(sensitivity, section, rowIndex, columnIndex));
+        td.addEventListener('click', () => {
+          enterInspector();
+          selectSensitivityCell(sensitivity, section, rowIndex, columnIndex);
+        });
         td.addEventListener('keydown', (event) =>
           handleSensitivityKey(event, sensitivity, section, rowIndex, columnIndex));
         row.appendChild(td);
@@ -1149,6 +1161,7 @@ function beginCellRangePointer(event, index, periodIndex) {
   // A finger drag is a scroll; the click that follows a tap selects the cell instead.
   if (event.button !== 0 || !event.isPrimary || event.pointerType === 'touch') return;
   event.preventDefault();
+  enterInspector();
   const cell = event.currentTarget;
   const additive = event.ctrlKey || event.metaKey;
   const previous = cellRanges.filter(validCellRegion)
@@ -1222,6 +1235,26 @@ function beginCellRangePointer(event, index, periodIndex) {
   cell.addEventListener('pointerup', end);
   cell.addEventListener('pointercancel', end);
   frame = requestAnimationFrame(update);
+}
+
+// A phone shows the inspector over the whole table, so the tap that opens it takes an entry, which back closes.
+function inspectorTakesEntry(phone, shown) {
+  return phone && !shown;
+}
+
+// A mouse press selects before its click, so both enter, and the second finds the entry taken.
+function enterInspector() {
+  const shown = !el('panel').closest('.inspector').hidden || history.state?.inspector;
+  if (!inspectorTakesEntry(phoneLayout.matches, shown)) return;
+  rememberHistoryEntry();
+  updateUrl(activeView, false);
+  history.replaceState({ ...history.state, inspector: true }, '');
+}
+
+// Back to the table: the entry the tap took, or the selection where the book opened on the cell.
+function leaveInspector() {
+  if (history.state?.inspector) history.back();
+  else clearSelection();
 }
 
 function clearSelection() {
@@ -1712,6 +1745,7 @@ function renderPanel() {
   const showInspector = Boolean(entry || sensitivity || rangeSelected) && !checksExpanded;
   inspector.hidden = !showInspector;
   document.querySelector('.layout').classList.toggle('inspector-hidden', !showInspector);
+  el('inspector-back-label').textContent = viewTitle(activeView) ?? 'Table';
   if (sensitivity) {
     renderSensitivityPanel(panel, sensitivity);
     return;
@@ -2404,6 +2438,11 @@ function focusNavigationView(id) {
 async function selectNavigationView(button) {
   if (!button) return;
   await openView(button.dataset.view);
+  if (compactLayout.matches) {
+    setNavigationVisible(false);
+    focusTable();
+    return;
+  }
   focusNavigationView(button.dataset.view);
 }
 
@@ -2766,6 +2805,7 @@ sourceImageViewport.querySelector('.source-image-dialog-canvas').addEventListene
 el('dock-right').addEventListener('click', () => setInspectorDock('right'));
 el('dock-bottom').addEventListener('click', () => setInspectorDock('bottom'));
 compactLayout.addEventListener('change', () => setInspectorDock(inspectorDock, false));
+el('inspector-back').addEventListener('click', leaveInspector);
 el('scale').addEventListener('input', (event) => setUiScale(Number(event.target.value)));
 el('scale-reset').addEventListener('click', () => setUiScale(100));
 el('theme-toggle').addEventListener('click', () => setTheme(theme === 'dark' ? 'light' : 'dark'));
