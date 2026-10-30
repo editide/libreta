@@ -50,8 +50,9 @@ let inspectorDock = stored('inspectorDock') === 'bottom' ? 'bottom' : 'right';
 let uiScale = Number(stored('uiScale')) || 100;
 let theme = stored('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 const compactLayout = window.matchMedia('(max-width: 52rem)');
-// app.css's phone layout, whose inspector covers the table.
-const phoneLayout = window.matchMedia('(max-width: 52rem) and (pointer: coarse)');
+// app.css's phone layout, whose inspector covers the table: a touch screen narrow upright or short held sideways.
+const phoneLayout =
+  window.matchMedia('(pointer: coarse) and (max-width: 52rem), (pointer: coarse) and (max-height: 30rem)');
 // A phone has no room beside the table, so its navigation opens over it, and only when asked.
 let navigationVisible = !embedded && !compactLayout.matches && stored('navigationVisible') !== 'false';
 let checksExpanded = null;
@@ -167,8 +168,9 @@ function syncResizerRange(resizer, size) {
   resizer.setAttribute('aria-valuemax', String(size.max));
 }
 
+// A phone's inspector lays out as docked below, which puts its parts side by side when it has the width.
 function effectiveDock() {
-  return compactLayout.matches ? 'bottom' : inspectorDock;
+  return compactLayout.matches || phoneLayout.matches ? 'bottom' : inspectorDock;
 }
 
 function inspectorSize() {
@@ -2805,6 +2807,7 @@ sourceImageViewport.querySelector('.source-image-dialog-canvas').addEventListene
 el('dock-right').addEventListener('click', () => setInspectorDock('right'));
 el('dock-bottom').addEventListener('click', () => setInspectorDock('bottom'));
 compactLayout.addEventListener('change', () => setInspectorDock(inspectorDock, false));
+phoneLayout.addEventListener('change', () => setInspectorDock(inspectorDock, false));
 el('inspector-back').addEventListener('click', leaveInspector);
 el('scale').addEventListener('input', (event) => setUiScale(Number(event.target.value)));
 el('scale-reset').addEventListener('click', () => setUiScale(100));

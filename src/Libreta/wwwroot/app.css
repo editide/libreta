@@ -2463,9 +2463,9 @@ kbd {
   }
 }
 
-/* A phone's inspector covers the table too, since docked below it leaves neither room to read; a narrow desktop window
-   keeps both in view, as a window beside a deck or a filing wants. */
-@media (max-width: 52rem) and (pointer: coarse) {
+/* A phone's inspector covers the table too, upright or sideways, since docked below or beside it leaves neither room to
+   read; a narrow desktop window keeps both in view, as a window beside a deck or a filing wants. */
+@media (pointer: coarse) and (max-width: 52rem), (pointer: coarse) and (max-height: 30rem) {
   .inspector,
   .layout.inspector-bottom .inspector {
     position: fixed;
