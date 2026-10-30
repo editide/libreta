@@ -21,16 +21,25 @@ try {
   Write-Host "Downloading $releaseUrl/$archive"
   Invoke-WebRequest "$releaseUrl/$archive" -OutFile (Join-Path $temporary $archive) -UseBasicParsing
   Expand-Archive (Join-Path $temporary $archive) $temporary
+  $unpacked = Join-Path $temporary 'libreta'
+  Get-ChildItem -Recurse $unpacked | Unblock-File
+
+  # The new build runs once where it was unpacked, so one that won't run on this machine leaves the installed one
+  # alone.
+  & (Join-Path $unpacked 'Libreta.exe') --help | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "The downloaded Libreta doesn't run on this machine, so the installed one is left as it was."
+  }
+
   if (Test-Path $applicationDirectory) {
     Remove-Item -Recurse -Force $applicationDirectory
   }
   New-Item -ItemType Directory -Force (Split-Path $applicationDirectory) | Out-Null
-  Move-Item (Join-Path $temporary 'libreta') $applicationDirectory
+  Move-Item $unpacked $applicationDirectory
 }
 finally {
   Remove-Item -Recurse -Force $temporary
 }
-Get-ChildItem -Recurse $applicationDirectory | Unblock-File
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not (($userPath -split ';') -contains $applicationDirectory)) {
