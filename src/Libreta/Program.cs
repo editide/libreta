@@ -38,6 +38,13 @@ if (options.Help)
   return 0;
 }
 
+if (options.Version)
+{
+  Console.WriteLine(Assembly.GetEntryAssembly()?
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
+  return 0;
+}
+
 if (options.Documentation is not null)
 {
   Documentation.Write(options.Documentation.Value, Console.Out);

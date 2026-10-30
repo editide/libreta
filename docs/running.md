@@ -3,7 +3,7 @@
 Libreta provides a local review server for humans and headless commands for agents and scripts.
 
 Book commands accept a book root—the folder containing `book.yaml`—before any options.
-`--help` and `--docs` work without a book.
+`--help`, `--version` and `--docs` work without a book.
 
 ## Read the documentation from the command line
 

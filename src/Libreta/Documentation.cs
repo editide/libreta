@@ -10,7 +10,7 @@ public static class Documentation
     {
       writer.WriteLine("# Libreta documentation");
       writer.WriteLine();
-      writer.WriteLine("Libreta is a local financial modeling tool built around plain-text books.");
+      writer.WriteLine("Libreta keeps spreadsheets as plain text: inputs in CSV, formulas in YAML, rendered as live tables.");
       writer.WriteLine();
       writer.WriteLine("- `libreta --docs format` explains what Libreta does and defines the book format.");
       writer.WriteLine("- `libreta --docs running` explains the server, commands, checks, and export.");

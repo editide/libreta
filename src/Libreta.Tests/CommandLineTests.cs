@@ -384,6 +384,21 @@ public class CommandLineTests
   }
 
   [Theory]
+  [InlineData("--version")]
+  [InlineData("-v")]
+  public void ParsesVersion(string argument)
+  {
+    // Arrange
+    string[] arguments = [argument];
+
+    // Act
+    CommandLineOptions options = CommandLineOptions.Parse(arguments);
+
+    // Assert
+    options.Version.ShouldBeTrue();
+  }
+
+  [Theory]
   [InlineData("--docs unknown")]
   [InlineData("books/spacex --docs")]
   [InlineData("--docs --check")]
