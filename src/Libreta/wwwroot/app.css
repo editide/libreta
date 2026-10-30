@@ -1204,6 +1204,10 @@ body.selecting-cells {
   left: -7px;
 }
 
+.inspector-back-bar {
+  display: none;
+}
+
 .layout.inspector-bottom .inspector-resizer {
   top: -7px;
   left: 0;
@@ -2401,27 +2405,13 @@ kbd {
   }
 
   .navigation {
-    position: static;
-    min-height: auto;
-    max-height: none;
     --nav-pad-x: calc(1 * var(--nav-rem));
     padding: calc(1.25 * var(--nav-rem)) var(--nav-pad-x);
     border-right: 0;
-    border-bottom: 1px solid var(--rule);
   }
 
   .navigation h2 {
     margin-bottom: calc(.75 * var(--nav-rem));
-  }
-
-  #view-tree > ul {
-    display: flex;
-    gap: calc(.25 * var(--nav-rem));
-    overflow-x: auto;
-  }
-
-  #view-tree > ul > li {
-    min-width: calc(11 * var(--nav-rem));
   }
 
   .nav-resizer {
@@ -2454,6 +2444,78 @@ kbd {
 
   .layout.inspector-bottom .source-details {
     padding-top: 0;
+  }
+
+  /* A narrow window's navigation takes the whole window over the table, which keeps its scroll beneath. */
+  .navigation {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    align-self: stretch;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  .nav-toggle {
+    z-index: calc(var(--z-overlay) + 1);
+  }
+}
+
+/* A phone's inspector covers the table too, upright or sideways, since docked below or beside it leaves neither room to
+   read; a narrow desktop window keeps both in view, as a window beside a deck or a filing wants. */
+@media (pointer: coarse) and (max-width: 52rem), (pointer: coarse) and (max-height: 30rem) {
+  .inspector,
+  .layout.inspector-bottom .inspector {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    align-self: stretch;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    padding-top: 0;
+    border: 0;
+  }
+
+  .inspector-resizer,
+  .inspector-toolbar,
+  .layout:not(.inspector-hidden) .nav-toggle {
+    display: none;
+  }
+
+  .inspector-back-bar {
+    display: flex;
+    min-height: 45px;
+    margin: 0 calc(-1 * var(--inspector-pad)) var(--space-6);
+    padding: 8px var(--inspector-pad);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  #inspector-back {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  #inspector-back .icon {
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+
+  #inspector-back span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

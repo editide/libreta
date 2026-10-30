@@ -71,6 +71,12 @@
     <aside class="inspector" hidden>
       <div class="resizer inspector-resizer" id="inspector-resizer" role="separator" aria-orientation="vertical"
            aria-label="Inspector width" tabindex="0" title="Drag to resize, double-click to reset"></div>
+      <div class="inspector-back-bar">
+        <button type="button" id="inspector-back">
+          <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10H4.5M9 5l-5 5 5 5"></path></svg>
+          <span id="inspector-back-label"></span>
+        </button>
+      </div>
       <div class="inspector-content" id="panel" tabindex="-1"></div>
       <div class="inspector-toolbar" role="group" aria-label="Inspector position">
         <button type="button" class="dock-button" id="dock-right" aria-label="Dock inspector right" title="Dock inspector right">
