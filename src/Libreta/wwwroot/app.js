@@ -648,9 +648,9 @@ function render() {
       continue;
     }
     tr.innerHTML = `<th data-column="-1" title="${escapeHtml(row.label)}">${escapeHtml(row.label)}</th>` +
-      row.cells.map((cell, index) => `<td class="${[cell.kind, cell.unresolved ? 'unresolved' : '',
-        cell.linked ? 'linked' : '', columnStyle(columns[index])].filter(Boolean).join(' ')}" ` +
-        `data-column="${index}">${cell.display}</td>`).join('');
+      row.cells.map((cell, index) => `<td class="${[cell.kind, cell.text ? 'text' : '',
+        cell.unresolved ? 'unresolved' : '', cell.linked ? 'linked' : '', columnStyle(columns[index])].filter(Boolean).join(' ')}" ` +
+        `${cell.text ? `title="${escapeHtml(cell.exact)}" ` : ''}data-column="${index}">${cell.display}</td>`).join('');
     tr.dataset.name = row.name;
     tr.dataset.rowIndex = index;
     tr.style.setProperty('--indent-level', row.indent ?? 0);
