@@ -813,6 +813,12 @@ table {
   white-space: nowrap;
 }
 
+/* A fixed-width column cannot grow to fit prose; the cell's title carries what the ellipsis hides. */
+.book-table tbody td.text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .book-table tbody tr:not(.header) {
   cursor: pointer;
   outline: none;

@@ -23,6 +23,7 @@ public class TextTests
     cell.Value.ShouldBeNull();
     payload.Display.ShouldBe("Ba2");
     payload.Exact.ShouldBe("Ba2");
+    payload.Text.ShouldBeTrue();
     payload.Unresolved.ShouldBeFalse();
   }
 

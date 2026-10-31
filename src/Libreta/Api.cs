@@ -72,6 +72,8 @@ public record CellPayload(
   string? SourceView = null,
   string? Note = null)
 {
+  public bool Text { get; init; }
+
   public List<DependentPayload> Dependents { get; init; } = new List<DependentPayload>();
 }
 
@@ -327,6 +329,7 @@ public static class PayloadBuilder
       link.SourceView,
       Paragraphs(new[] { cell.Note, lineNote }.OfType<string>().ToList()))
     {
+      Text = cell.Text is not null,
       Dependents = Dependents(view, engine, readers.GetValueOrDefault(coordinate), presentation)
     };
   }
