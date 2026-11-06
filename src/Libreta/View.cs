@@ -116,6 +116,7 @@ public class Book
 {
   public string Root { get; private init; } = "";
   public BookStructure Structure { get; private init; } = null!;
+  public IBookFiles Source => Structure.Source;
   public Dictionary<string, Fact> Facts { get; } = new Dictionary<string, Fact>();
   public Dictionary<string, Formula> Formulas { get; } = new Dictionary<string, Formula>();
   public Dictionary<string, ColumnFormula> ColumnFormulas { get; } = new Dictionary<string, ColumnFormula>();
@@ -134,10 +135,10 @@ public class Book
   private Dictionary<string, List<string>> ViewIdsByLine { get; } = new Dictionary<string, List<string>>();
   public IEnumerable<CellCoordinate> PresentedCoordinates => ViewIdsByCoordinate.Keys;
 
-  public static Book Load(string root)
+  public static Book Load(string root, IBookFiles? source = null)
   {
     IDeserializer deserializer = YamlFile.Deserializer();
-    BookStructure structure = BookStructure.Load(root);
+    BookStructure structure = BookStructure.Load(root, source);
     var book = new Book { Root = structure.Root, Structure = structure };
 
     foreach (BookDefinition definition in structure.Definitions)
@@ -145,7 +146,7 @@ public class Book
       foreach ((string csvPath, string scopeFolder) in structure.FilesBelow(definition, "*.csv", "facts"))
       {
         string metadataPath = Path.ChangeExtension(csvPath, ".yaml");
-        FactTableFile metadata = YamlFile.Load<FactTableFile>(metadataPath, deserializer);
+        FactTableFile metadata = YamlFile.Load<FactTableFile>(metadataPath, deserializer, structure.Source);
         string scope = BookStructure.Scope(definition, scopeFolder);
         book.FoldersByScope.TryAdd(scope, scopeFolder);
         book.LoadFactTable(csvPath, metadataPath, metadata, scope, definition.File);
@@ -155,7 +156,7 @@ public class Book
     var formulaFiles = new List<(string Scope, FormulasFile File)>();
     foreach ((BookDefinition definition, string path, string scope) in book.ScopedFiles("formulas.yaml"))
     {
-      FormulasFile formulas = YamlFile.Load<FormulasFile>(path, deserializer);
+      FormulasFile formulas = YamlFile.Load<FormulasFile>(path, deserializer, structure.Source);
       formulaFiles.Add((scope, formulas));
       foreach (KeyValuePair<string, FormulaDefinition> entry in formulas.Formulas)
       {
@@ -256,7 +257,7 @@ public class Book
       (_, string id) = BookStructure.ViewId(definition, folder);
       book.ViewIdsByScope.Add(scope, id);
       book.ViewFoldersById.Add(id, folder);
-      ViewFile presentation = YamlFile.Load<ViewFile>(path, deserializer);
+      ViewFile presentation = YamlFile.Load<ViewFile>(path, deserializer, structure.Source);
       book.Presentations.Add(id, presentation);
       book.AddPeriods(scope, presentation.Columns
         .Where(column => column.Source is not null)
@@ -266,7 +267,7 @@ public class Book
 
     foreach ((BookDefinition definition, string path, string scope) in book.ScopedFiles("checks.yaml"))
     {
-      ChecksFile checks = YamlFile.Load<ChecksFile>(path, deserializer);
+      ChecksFile checks = YamlFile.Load<ChecksFile>(path, deserializer, structure.Source);
       foreach (KeyValuePair<string, CheckDefinition> entry in checks.Checks)
       {
         (Expr expression, string text) = Expand(entry.Value.Formula, definition);
@@ -285,7 +286,7 @@ public class Book
 
     foreach ((BookDefinition bookDefinition, string path, string scope) in book.ScopedFiles("sensitivities.yaml"))
     {
-      SensitivitiesFile file = YamlFile.Load<SensitivitiesFile>(path, deserializer);
+      SensitivitiesFile file = YamlFile.Load<SensitivitiesFile>(path, deserializer, structure.Source);
       foreach (KeyValuePair<string, SensitivityDefinition> entry in file.Sensitivities)
       {
         SensitivityDefinition definition = entry.Value;
@@ -700,8 +701,15 @@ public class Book
     string scope,
     BookFile bookFile)
   {
-    string[] lines = File.ReadAllLines(csvPath);
-    if (lines.Length == 0)
+    var lines = new List<string>();
+    using (var reader = new StringReader(Source.ReadAllText(csvPath)))
+    {
+      for (string? read = reader.ReadLine(); read is not null; read = reader.ReadLine())
+      {
+        lines.Add(read);
+      }
+    }
+    if (lines.Count == 0)
     {
       throw new InvalidDataException($"'{csvPath}' is empty");
     }
@@ -743,9 +751,9 @@ public class Book
     string sourceImage = ResolveSourceImage(metadataPath, metadata.Source.Image);
     var loadedLines = new HashSet<string>();
     // Units decide whether a line holds text, so a typo in a numeric row still fails here, at its cell.
-    var formatter = new Formatter(Formatter.Load(Path.GetDirectoryName(csvPath)!, Root, YamlFile.Deserializer()));
+    var formatter = new Formatter(Formatter.Load(Path.GetDirectoryName(csvPath)!, Root, YamlFile.Deserializer(), Source));
 
-    for (int lineIndex = 1; lineIndex < lines.Length; lineIndex++)
+    for (int lineIndex = 1; lineIndex < lines.Count; lineIndex++)
     {
       string line = lines[lineIndex];
       if (line.Trim().Length == 0)
@@ -966,7 +974,7 @@ public class Book
       throw new InvalidDataException(
         $"'{metadataPath}' source.image must be a PNG, JPEG, or WebP image");
     }
-    if (!File.Exists(path))
+    if (!Source.FileExists(path))
     {
       throw new InvalidDataException($"'{metadataPath}' source.image does not exist: {image}");
     }
@@ -1150,7 +1158,7 @@ public class View
       Scope = scope,
       Checks = book.Checks.Where(check => check.Scope == checkScope).ToList(),
       Presentation = book.Presentations[id],
-      Formatter = new Formatter(Formatter.Load(folder, book.Root, YamlFile.Deserializer()))
+      Formatter = new Formatter(Formatter.Load(folder, book.Root, YamlFile.Deserializer(), book.Source))
     };
   }
 
@@ -1171,7 +1179,7 @@ public class View
       Id = $"{LinePrefix}{line}",
       Scope = scope,
       Presentation = presentation,
-      Formatter = new Formatter(Formatter.Load(folder, book.Root, YamlFile.Deserializer()))
+      Formatter = new Formatter(Formatter.Load(folder, book.Root, YamlFile.Deserializer(), book.Source))
     };
     presentation.Title = view.LabelOf(line);
     presentation.Subtitle = "No table shows this line, so it stands here with the lines it reads.";
@@ -1200,7 +1208,7 @@ public class View
       Book = book,
       Scope = scope,
       Checks = book.Checks.Where(check => check.Scope == scope).ToList(),
-      Formatter = new Formatter(Formatter.Load(folder, book.Root, deserializer))
+      Formatter = new Formatter(Formatter.Load(folder, book.Root, deserializer, book.Source))
     };
   }
 

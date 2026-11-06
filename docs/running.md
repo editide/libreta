@@ -146,6 +146,17 @@ A cell with no value is marked in `unresolved` without failing; an unknown name 
 These commands write results to standard output, report errors to standard error, and return a nonzero exit code on failure.
 Use one headless command per invocation; `--port` applies only to the server.
 
+## Read a book as a commit left it
+
+Add `--at` and a git revision to `--list`, `--view`, `--value`, `--lines`, `--check` or `--export` to read the book as that revision left it:
+
+```bash
+libreta books/spacex --lines --json --at HEAD~3
+```
+
+Libreta reads the files from git without checking anything out, so the working tree is untouched, and a book it has since moved or deleted still reads at the path it had.
+Errors name files as the working tree would, and formats inherit from the `formats.yaml` files the revision had above the book.
+
 ## Verify a book
 
 Run every check and validate every presented formula graph:

@@ -19,11 +19,11 @@ public static class YamlFile
       .WithTypeConverter(new ViewColumnConverter());
   }
 
-  public static T Load<T>(string path, IDeserializer? deserializer = null)
+  public static T Load<T>(string path, IDeserializer? deserializer = null, IBookFiles? source = null)
   {
     try
     {
-      return (deserializer ?? Deserializer()).Deserialize<T>(File.ReadAllText(path));
+      return (deserializer ?? Deserializer()).Deserialize<T>((source ?? DiskFiles.Instance).ReadAllText(path));
     }
     catch (YamlException exception)
     {

@@ -16,9 +16,9 @@ public static class XlsxExport
   private const int SheetNameLimit = 31;
   private const int NoteLineLength = 40;
 
-  public static void Write(string root, Stream output)
+  public static void Write(string root, Stream output, IBookFiles? source = null)
   {
-    Book book = Book.Load(root);
+    Book book = Book.Load(root, source);
     List<ViewCatalogEntry> entries = CatalogLoader.Load(book, 1).Views;
     var builder = new Builder(book, entries.Select(entry => book.Views[entry.Id]).ToList());
     List<ExportSheet> sheets = entries.Select(entry => builder.Layout(book.Views[entry.Id], entry.Title)).ToList();

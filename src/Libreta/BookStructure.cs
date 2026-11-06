@@ -25,29 +25,32 @@ public sealed class BookStructure
 
   private static readonly Regex InclusionId = new Regex("^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.CultureInvariant);
 
-  private BookStructure(string root, BookDefinition definition)
+  private BookStructure(string root, BookDefinition definition, IBookFiles source)
   {
     Root = root;
+    Source = source;
     Definition = definition;
     Definitions = Flatten(definition).ToList();
   }
 
   public string Root { get; }
+  public IBookFiles Source { get; }
   public BookDefinition Definition { get; }
   public List<BookDefinition> Definitions { get; }
 
-  public static BookStructure Load(string root)
+  public static BookStructure Load(string root, IBookFiles? source = null)
   {
+    source ??= DiskFiles.Instance;
     string fullRoot = Path.GetFullPath(root);
-    BookDefinition definition = LoadDefinition(fullRoot, "", "", "", new HashSet<string>(PathComparer));
-    return new BookStructure(fullRoot, definition);
+    BookDefinition definition = LoadDefinition(source, fullRoot, "", "", "", new HashSet<string>(PathComparer));
+    return new BookStructure(fullRoot, definition, source);
   }
 
   public IEnumerable<string> Files(BookDefinition definition, string fileName)
   {
     return OwnedDirectories(definition)
       .Select(directory => Path.Combine(directory, fileName))
-      .Where(File.Exists)
+      .Where(Source.FileExists)
       .OrderBy(path => path, PathComparer);
   }
 
@@ -59,7 +62,7 @@ public sealed class BookStructure
     return OwnedDirectories(definition)
       .Select(directory => (Directory: directory, Root: OutermostNamedAncestor(definition, directory, requiredParent)))
       .Where(item => item.Root is not null)
-      .SelectMany(item => Directory.GetFiles(item.Directory, searchPattern, SearchOption.TopDirectoryOnly)
+      .SelectMany(item => Source.Files(item.Directory, searchPattern)
         .Select(path => (Path: path, ScopeFolder: Path.GetDirectoryName(item.Root!)!)))
       .OrderBy(item => item.Path, PathComparer);
   }
@@ -109,6 +112,7 @@ public sealed class BookStructure
   }
 
   private static BookDefinition LoadDefinition(
+    IBookFiles source,
     string root,
     string id,
     string bookNamespace,
@@ -122,7 +126,7 @@ public sealed class BookStructure
     }
 
     string path = Path.Combine(canonicalRoot, "book.yaml");
-    BookFile file = LoadBookFile(path);
+    BookFile file = LoadBookFile(source.ReadAllText(path), path);
     var definition = new BookDefinition
     {
       Root = canonicalRoot,
@@ -166,7 +170,7 @@ public sealed class BookStructure
       {
         throw new InvalidDataException($"'{path}' inclusion '{inclusion.Id}' must stay inside the parent book");
       }
-      if (!File.Exists(Path.Combine(childRoot, "book.yaml")))
+      if (!source.FileExists(Path.Combine(childRoot, "book.yaml")))
       {
         throw new InvalidDataException($"Included book '{inclusion.Id}' at '{childRoot}' does not contain book.yaml");
       }
@@ -174,6 +178,7 @@ public sealed class BookStructure
       string childNamespace = Qualify(bookNamespace, normalizedId);
       string childViewPrefix = viewPrefix.Length == 0 ? inclusion.Id : $"{viewPrefix}/{inclusion.Id}";
       definition.Children.Add(LoadDefinition(
+        source,
         childRoot,
         inclusion.Id,
         childNamespace,
@@ -183,12 +188,12 @@ public sealed class BookStructure
     return definition;
   }
 
-  private static BookFile LoadBookFile(string path)
+  private static BookFile LoadBookFile(string text, string path)
   {
     var yaml = new YamlStream();
     try
     {
-      using var reader = new StringReader(File.ReadAllText(path));
+      using var reader = new StringReader(text);
       yaml.Load(reader);
     }
     catch (YamlException exception)
@@ -357,7 +362,7 @@ public sealed class BookStructure
     }
   }
 
-  private static IEnumerable<string> OwnedDirectories(BookDefinition definition)
+  private IEnumerable<string> OwnedDirectories(BookDefinition definition)
   {
     var pending = new Stack<string>();
     pending.Push(definition.Root);
@@ -365,9 +370,9 @@ public sealed class BookStructure
     {
       string directory = pending.Pop();
       yield return directory;
-      foreach (string child in Directory.GetDirectories(directory).OrderByDescending(path => path, PathComparer))
+      foreach (string child in Source.Directories(directory).OrderByDescending(path => path, PathComparer))
       {
-        if (File.Exists(Path.Combine(child, "book.yaml")))
+        if (Source.FileExists(Path.Combine(child, "book.yaml")))
         {
           continue;
         }

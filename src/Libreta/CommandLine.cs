@@ -116,6 +116,8 @@ public class CommandLineOptions
   /// <c>--set-regions</c> writes there.</summary>
   public string? RegionsTable { get; private init; }
   public string? RegionsFile { get; private init; }
+  /// <summary>The revision a headless read takes the book as, read from git rather than the working tree.</summary>
+  public string? At { get; private init; }
   public bool Json { get; private init; }
   public bool Help { get; private init; }
   public bool Version { get; private init; }
@@ -142,6 +144,7 @@ public class CommandLineOptions
     string? regionsTable = null;
     string? regionsFile = null;
     bool json = false;
+    string? at = null;
     DocumentationTopic? documentation = null;
     for (int index = first; index < arguments.Length; index++)
     {
@@ -222,6 +225,10 @@ public class CommandLineOptions
         case "--json":
           json = true;
           break;
+        case "--at":
+          Require(arguments, index, 1);
+          at = arguments[++index];
+          break;
         case "--docs":
           if (documentation is not null)
           {
@@ -272,6 +279,13 @@ public class CommandLineOptions
       throw new ArgumentException(
         "--no-open leaves the server's page to the caller, so it cannot be combined with a headless command.");
     }
+    if (at is not null && command is not
+      (HeadlessCommand.List or HeadlessCommand.View or HeadlessCommand.Value or HeadlessCommand.Lines or
+      HeadlessCommand.Check or HeadlessCommand.Export))
+    {
+      throw new ArgumentException("--at reads a book as a revision left it, so it needs --list, --view, --value, " +
+        "--lines, --check or --export.");
+    }
     if (documentation is not null &&
       (root is not null || command is not null || portSpecified || json || cell is not null))
     {
@@ -290,6 +304,7 @@ public class CommandLineOptions
       Output = output,
       RegionsTable = regionsTable,
       RegionsFile = regionsFile,
+      At = at,
       Json = json,
       Documentation = documentation
     };
@@ -314,6 +329,8 @@ public class CommandLineOptions
     writer.WriteLine("  libreta [<book-root>] --show-regions <table.yaml> <folder>   (each region cut from its image " +
       "and outlined, to read back against its value)");
     writer.WriteLine("  libreta [<book-root>] --url   (the address of the server already running the book)");
+    writer.WriteLine("  libreta <book-root> <headless command> --at <revision>   (the book as a git revision left it, " +
+      "read without checking it out; with --list, --view, --value, --lines, --check or --export)");
     writer.WriteLine("  libreta --docs [format|running]");
     writer.WriteLine("  libreta --version");
     writer.WriteLine();
@@ -442,22 +459,25 @@ public static class HeadlessRunner
     Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
   };
 
-  public static int Run(
-    string root, HeadlessCommand command, ViewQuery? query, bool json, IReadOnlyList<string>? lines = null)
+  /// <param name="at">The revision to read the book as, rather than the working tree.</param>
+  public static int Run(string root, HeadlessCommand command, ViewQuery? query, bool json,
+    IReadOnlyList<string>? lines = null, string? at = null)
   {
+    using GitFiles? commit = at is null ? null : GitFiles.Open(root, at);
+    Book book = Book.Load(root, commit);
     return command switch
     {
-      HeadlessCommand.List => RunList(root, json),
-      HeadlessCommand.Lines => RunLines(root, lines!, json),
-      HeadlessCommand.Check => RunCheck(root, json),
-      HeadlessCommand.View or HeadlessCommand.Value => RunView(root, query!, json),
+      HeadlessCommand.List => RunList(book, json),
+      HeadlessCommand.Lines => RunLines(book, lines!, json),
+      HeadlessCommand.Check => RunCheck(book, json),
+      HeadlessCommand.View or HeadlessCommand.Value => RunView(book, query!, json),
       _ => throw new ArgumentOutOfRangeException(nameof(command), command, "not a console command")
     };
   }
 
-  private static int RunList(string root, bool json)
+  private static int RunList(Book book, bool json)
   {
-    ViewCatalog catalog = CatalogLoader.Load(Book.Load(root), 1);
+    ViewCatalog catalog = CatalogLoader.Load(book, 1);
     if (json)
     {
       Console.WriteLine(JsonSerializer.Serialize(catalog.Views, JsonOptions));
@@ -473,9 +493,8 @@ public static class HeadlessRunner
   /// <summary>Loads the book once for every line, so a caller reading many pays one start, and reads every line in the
   /// book when no name is given. Exits non-zero only when a name is unknown or fails to evaluate; a cell with no value
   /// is marked, not a failure.</summary>
-  private static int RunLines(string root, IReadOnlyList<string> names, bool json)
+  private static int RunLines(Book book, IReadOnlyList<string> names, bool json)
   {
-    Book book = Book.Load(root);
     var views = new Dictionary<string, (View View, Engine Engine)>();
     IEnumerable<string> asked = names.Count > 0
       ? names
@@ -559,9 +578,8 @@ public static class HeadlessRunner
 
   /// <summary>Every check in one pass, exiting non-zero on a failure, view error or missing line so a script can gate
   /// on it.</summary>
-  private static int RunCheck(string root, bool json)
+  private static int RunCheck(Book book, bool json)
   {
-    Book book = Book.Load(root);
     ViewCatalog catalog = CatalogLoader.Load(book, 1);
     var checkedViews = new List<CheckedView>();
     var checkedScopes = new HashSet<string>();
@@ -699,9 +717,9 @@ public static class HeadlessRunner
       : string.Join(", ", check.Periods.Zip(check.Deltas, (period, delta) => $"{period} {delta}"));
   }
 
-  private static int RunView(string root, ViewQuery query, bool json)
+  private static int RunView(Book book, ViewQuery query, bool json)
   {
-    View view = LoadView(root, query.ViewId);
+    View view = LoadView(book, query.ViewId);
     if (query.Line is not null)
     {
       return RunValue(view, query, json);
@@ -774,9 +792,8 @@ public static class HeadlessRunner
     return column.StartsWith(prefix, StringComparison.Ordinal) ? column[prefix.Length..] : column;
   }
 
-  private static View LoadView(string root, string id)
+  private static View LoadView(Book book, string id)
   {
-    Book book = Book.Load(root);
     ViewCatalog catalog = CatalogLoader.Load(book, 1);
     if (!catalog.Views.Any(entry => entry.Id == id))
     {
