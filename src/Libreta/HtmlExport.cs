@@ -28,9 +28,10 @@ public static class HtmlExport
   /// a capture at twice that.</summary>
   private const int MaxImageWidth = 1400;
 
-  public static string Build(string root, string assets, PictureCache? pictures = null)
+  public static string Build(string root, string assets, PictureCache? pictures = null, IBookFiles? source = null)
   {
-    (BookSnapshotPayload snapshot, Dictionary<string, double> scales) = Snapshot(root, pictures ?? PictureCache.User);
+    (BookSnapshotPayload snapshot, Dictionary<string, double> scales) =
+      Snapshot(root, pictures ?? PictureCache.User, source);
     JsonNode json = JsonSerializer.SerializeToNode(snapshot, PayloadJson.Options)!;
     ScaleRegions(json["views"]!, scales);
     string script = File.ReadAllText(Path.Combine(assets, "app.js"));
@@ -53,9 +54,9 @@ public static class HtmlExport
 
   /// <summary>The snapshot, and how much each source image was scaled to embed it.</summary>
   private static (BookSnapshotPayload Snapshot, Dictionary<string, double> Scales) Snapshot(string root,
-    PictureCache pictures)
+    PictureCache pictures, IBookFiles? source)
   {
-    Book book = Book.Load(root);
+    Book book = Book.Load(root, source);
     ViewCatalog catalog = CatalogLoader.Load(book, 1);
     var views = new Dictionary<string, ViewPayload>();
     foreach ((string id, View view) in book.Views)
@@ -72,7 +73,7 @@ public static class HtmlExport
     }
     // Encoding the source images is the slow part of the export, so they're encoded at the same time.
     Dictionary<string, (string Uri, double Scale)> images = BookStore.SourceImages(book).AsParallel()
-      .Select(image => (Image: image, Embedded: SourceImage(Path.Combine(root, image), pictures)))
+      .Select(image => (Image: image, Embedded: SourceImage(Path.Combine(root, image), pictures, book.Source)))
       .ToDictionary(image => image.Image, image => image.Embedded);
     return (new BookSnapshotPayload(catalog, views, images.ToDictionary(image => image.Key, image => image.Value.Uri),
       lines, DateTimeOffset.Now), images.ToDictionary(image => image.Key, image => image.Value.Scale));
@@ -129,11 +130,11 @@ public static class HtmlExport
     return $"data:{contentType};base64,{Convert.ToBase64String(File.ReadAllBytes(path))}";
   }
 
-  private static (string Uri, double Scale) SourceImage(string path, PictureCache pictures)
+  private static (string Uri, double Scale) SourceImage(string path, PictureCache pictures, IBookFiles source)
   {
     string contentType = BookStore.ImageContentType(path)
       ?? throw new InvalidDataException($"not an image the page can show: {path}");
-    byte[] original = File.ReadAllBytes(path);
+    byte[] original = source.ReadAllBytes(path);
     byte[]? webp = contentType is "image/png" or "image/jpeg"
       ? pictures.Get(original, "webp", () => WebP(original))
       : null;

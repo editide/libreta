@@ -120,13 +120,15 @@ public class Formatter
 
   /// <summary>A unit any formats.yaml defines replaces the built-in unit outright, so its definition reads complete;
   /// a file's defaults still beat the built-in units it leaves alone.</summary>
-  public static FormatsFile Load(string viewFolder, string bookRoot, IDeserializer deserializer)
+  public static FormatsFile Load(string viewFolder, string bookRoot, IDeserializer deserializer,
+    IBookFiles? source = null)
   {
+    source ??= DiskFiles.Instance;
     var formats = new FormatsFile();
     (FormatSpecOverride builtInDefaults, Dictionary<string, FormatSpecOverride> builtIns) =
       Merge(formats, new[] { BuiltIn(deserializer) });
-    IEnumerable<FormatsOverride> files = Enumerable.Reverse(LocateAll(viewFolder, bookRoot))
-      .Select(path => YamlFile.Load<FormatsOverride>(path, deserializer));
+    IEnumerable<FormatsOverride> files = Enumerable.Reverse(LocateAll(viewFolder, bookRoot, source))
+      .Select(path => YamlFile.Load<FormatsOverride>(path, deserializer, source));
     (FormatSpecOverride defaults, Dictionary<string, FormatSpecOverride> formatOverrides) = Merge(formats, files);
 
     var fallback = new FormatSpec();
@@ -183,15 +185,16 @@ public class Formatter
   }
 
   /// <summary>Every formats.yaml from the view folder to its project boundary, nearest first, possibly none.</summary>
-  public static List<string> LocateAll(string viewFolder, string bookRoot)
+  public static List<string> LocateAll(string viewFolder, string bookRoot, IBookFiles? source = null)
   {
+    source ??= DiskFiles.Instance;
     var paths = new List<string>();
-    string boundary = InheritanceRoot(bookRoot);
+    string boundary = InheritanceRoot(bookRoot, source);
     DirectoryInfo? directory = new DirectoryInfo(viewFolder);
     while (directory is not null)
     {
       string candidate = Path.Combine(directory.FullName, "formats.yaml");
-      if (File.Exists(candidate))
+      if (source.FileExists(candidate))
       {
         paths.Add(candidate);
       }
@@ -217,7 +220,7 @@ public class Formatter
     return deserializer.Deserialize<FormatsOverride>(reader.ReadToEnd());
   }
 
-  private static string InheritanceRoot(string bookRoot)
+  private static string InheritanceRoot(string bookRoot, IBookFiles source)
   {
     string fullBookRoot = Path.GetFullPath(bookRoot);
     for (DirectoryInfo? directory = new DirectoryInfo(fullBookRoot);
@@ -225,7 +228,7 @@ public class Formatter
       directory = directory.Parent)
     {
       string marker = Path.Combine(directory.FullName, ".git");
-      if (Directory.Exists(marker) || File.Exists(marker))
+      if (source.DirectoryExists(marker) || source.FileExists(marker))
       {
         return directory.FullName;
       }
@@ -235,7 +238,7 @@ public class Formatter
       directory is not null;
       directory = directory.Parent)
     {
-      if (File.Exists(Path.Combine(directory.FullName, "formats.yaml")))
+      if (source.FileExists(Path.Combine(directory.FullName, "formats.yaml")))
       {
         return directory.FullName;
       }

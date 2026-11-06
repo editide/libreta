@@ -55,7 +55,8 @@ string root;
 if (options.Root is not null)
 {
   root = Path.GetFullPath(options.Root);
-  if (!File.Exists(Path.Combine(root, "book.yaml")))
+  // A book read at a revision may be one the working tree has since moved or deleted.
+  if (options.At is null && !File.Exists(Path.Combine(root, "book.yaml")))
   {
     Console.Error.WriteLine($"book root does not contain book.yaml: {root}");
     return 1;
@@ -100,16 +101,17 @@ if (options.Command == HeadlessCommand.Export)
 {
   try
   {
+    using GitFiles? commit = options.At is null ? null : GitFiles.Open(root, options.At);
     if (Path.GetExtension(options.Output!).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
     {
       // Built in memory so a book that fails to export leaves no half-written workbook behind.
       using var workbook = new MemoryStream();
-      XlsxExport.Write(root, workbook);
+      XlsxExport.Write(root, workbook, commit);
       File.WriteAllBytes(options.Output!, workbook.ToArray());
     }
     else
     {
-      File.WriteAllText(options.Output!, HtmlExport.Build(root, InterfaceFolder()));
+      File.WriteAllText(options.Output!, HtmlExport.Build(root, InterfaceFolder(), source: commit));
     }
     Console.WriteLine($"  wrote {options.Output} ({new FileInfo(options.Output!).Length / 1024} KB)");
     return 0;
@@ -167,7 +169,7 @@ if (options.Command is not null)
 {
   try
   {
-    return HeadlessRunner.Run(root, options.Command.Value, options.Query, options.Json, options.Lines);
+    return HeadlessRunner.Run(root, options.Command.Value, options.Query, options.Json, options.Lines, options.At);
   }
   catch (Exception exception)
   {
