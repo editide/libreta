@@ -331,6 +331,7 @@ The fallback is deliberately mechanical, so `free_cash_flow` becomes `Free cash 
 `units` is optional and falls back to the owning book's default units.
 `note` is optional and records the modeling judgment or methodology, shown when inspecting the calculated line or any of its cells.
 `cell_notes` optionally maps columns to notes shown above it when inspecting those individual cells.
+`flat: true` optionally marks a formula pinned to one column as meant to repeat across its folder; see [single values](#single-values).
 Cell overrides and calculated columns show only their own note.
 
 ### References
@@ -369,6 +370,14 @@ formulas:
 ```
 
 A formula whose every reference names its column has the same value in every column of its folder, so in a folder of periods it repeats one figure under each, and `--check` reports it as a repeated line unless cell overrides take all but one of the columns.
+When the repetition is the point, such as an average drawn as a level line across the periods it averages, mark the formula `flat: true` and `--check` leaves it alone:
+
+```yaml
+formulas:
+  revenue_growth_average:
+    formula: derived.revenue_quarterly_compound_growth["Value"]
+    flat: true
+```
 
 ### Operators and functions
 

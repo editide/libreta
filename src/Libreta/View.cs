@@ -59,6 +59,8 @@ public class Formula
   public string Text { get; set; } = "";
   public string? Units { get; set; }
   public string? Note { get; set; }
+  /// <summary>The book means a pinned formula to show its one value under every column, as a level line does.</summary>
+  public bool Flat { get; set; }
   public Dictionary<string, string> CellNotes { get; set; } = new Dictionary<string, string>();
 }
 
@@ -171,6 +173,7 @@ public class Book
           Text = text,
           Units = ValueOrDefault(entry.Value.Units, definition.File.Units),
           Note = entry.Value.Note?.Trim(),
+          Flat = entry.Value.Flat,
           CellNotes = entry.Value.CellNotes.ToDictionary(note => note.Key, note => note.Value.Trim())
         });
       }
