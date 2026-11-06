@@ -92,6 +92,7 @@ public class FormulaDefinition
   public string Formula { get; set; } = "";
   public string? Units { get; set; }
   public string? Note { get; set; }
+  public bool Flat { get; set; }
   public Dictionary<string, string> CellNotes { get; set; } = new Dictionary<string, string>();
 }
 

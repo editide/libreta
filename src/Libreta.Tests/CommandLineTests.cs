@@ -751,6 +751,33 @@ public class CommandLineTests
   }
 
   [Fact]
+  public void CheckDoesNotWarnOfAPinnedFormulaMarkedFlat()
+  {
+    // Arrange
+    using CheckBookFixture fixture = new(
+      """
+      formulas:
+        level:
+          formula: input["2024"]
+          flat: true
+      """,
+      """
+      title: Review
+      columns: [2024, 2025]
+      rows:
+        - line: level
+      """,
+      "line_item,2024,2025\ninput,1,2");
+
+    // Act
+    (int exitCode, string output) = RunCheck(fixture.Root, false);
+
+    // Assert
+    exitCode.ShouldBe(0);
+    output.ShouldNotContain("repeated line");
+  }
+
+  [Fact]
   public void CheckReportsFactsWithoutARegionInTablesWithAnImage()
   {
     // Arrange
