@@ -497,6 +497,8 @@ public class BookStore : IDisposable
   private readonly object gate = new object();
   private readonly object rebuildGate = new object();
   private readonly Timer reloadTimer;
+  private HashSet<string>? ownedDirectories;
+  private List<string> watchedRoots = [];
   private BookSnapshot snapshot = new BookSnapshot(
     new ViewCatalog("", "", new List<ViewCatalogEntry>(), 0),
     new Dictionary<string, ViewPayload>(),
@@ -653,35 +655,51 @@ public class BookStore : IDisposable
 
   // A folder can vanish before its watcher opens. Skip it: a reload is coming, and throwing on this timer thread would
   // take the server down.
-  private FileSystemWatcher? TryWatch(string directory, bool recursive)
+  private FileSystemWatcher? TryWatch(string directory)
   {
     try
     {
-      return CreateWatcher(directory, "*", recursive, OnChanged);
+      return CreateWatcher(directory, "*", true, OnChanged);
     }
     catch (Exception exception) when (exception is ArgumentException or IOException)
     {
+      if (Directory.Exists(directory))
+      {
+        Console.WriteLine($"  error     {DateTime.Now:HH:mm:ss}  cannot watch {directory}: {exception.Message}");
+      }
       return null;
     }
   }
 
+  // Each FileSystemWatcher costs an inotify instance on Linux, of which a user gets 128 by default, so the book is
+  // watched recursively from its outermost folders and events from folders it doesn't own, such as an excluded child
+  // book's, are filtered out instead.
   private void RefreshBookWatchers()
   {
-    IEnumerable<string> directories;
-    bool recursive;
+    HashSet<string>? owned;
     try
     {
-      directories = BookStructure.Load(root).OwnedDirectories().ToList();
-      recursive = false;
+      owned = BookStructure.Load(root).OwnedDirectories()
+        .Select(Path.TrimEndingDirectorySeparator)
+        .ToHashSet(BookStructure.PathComparer);
     }
     catch
     {
-      directories = new[] { root };
-      recursive = true;
+      owned = null;
+    }
+    List<string> roots = owned is null
+      ? [root]
+      : owned.Where(directory => Path.GetDirectoryName(directory) is not string parent || !owned.Contains(parent))
+        .Order(BookStructure.PathComparer)
+        .ToList();
+    Volatile.Write(ref ownedDirectories, owned);
+    if (roots.SequenceEqual(watchedRoots, BookStructure.PathComparer))
+    {
+      return;
     }
 
-    List<FileSystemWatcher> replacements = directories
-      .Select(directory => TryWatch(directory, recursive))
+    List<FileSystemWatcher> replacements = roots
+      .Select(TryWatch)
       .OfType<FileSystemWatcher>()
       .ToList();
     lock (gate)
@@ -700,6 +718,7 @@ public class BookStore : IDisposable
       }
       bookWatchers.Clear();
       bookWatchers.AddRange(replacements);
+      watchedRoots = replacements.Count == roots.Count ? roots : [];
     }
   }
 
@@ -717,8 +736,14 @@ public class BookStore : IDisposable
     ScheduleReload();
   }
 
-  private static bool AffectsBook(FileSystemEventArgs eventArgs)
+  private bool AffectsBook(FileSystemEventArgs eventArgs)
   {
+    if (Volatile.Read(ref ownedDirectories) is HashSet<string> owned &&
+      !InOwnedDirectory(owned, eventArgs.FullPath) &&
+      !(eventArgs is RenamedEventArgs moved && InOwnedDirectory(owned, moved.OldFullPath)))
+    {
+      return false;
+    }
     if (IsBookFile(eventArgs.FullPath))
     {
       return true;
@@ -729,6 +754,11 @@ public class BookStore : IDisposable
     }
     return Directory.Exists(eventArgs.FullPath) ||
       eventArgs.ChangeType is WatcherChangeTypes.Deleted or WatcherChangeTypes.Renamed;
+  }
+
+  private static bool InOwnedDirectory(HashSet<string> owned, string path)
+  {
+    return Path.GetDirectoryName(path) is string parent && owned.Contains(parent);
   }
 
   private static bool IsBookFile(string path)

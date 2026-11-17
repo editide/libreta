@@ -84,6 +84,43 @@ public class BookStoreTests
     store.Catalog.Views.Single().Title.ShouldBe("Analysis 4");
   }
 
+  // Linux allows a user 128 inotify instances by default, so a book of more folders than that must share them.
+  [Fact]
+  public void ReloadsABookWithMoreFoldersThanTheSystemAllowsWatchers()
+  {
+    // Arrange
+    using var fixture = new StoreFixture("analysis");
+    for (int index = 0; index < 200; index++)
+    {
+      Directory.CreateDirectory(fixture.PathTo($"notes/{index}"));
+    }
+    using var store = new BookStore(fixture.Root, fixture.Assets);
+
+    // Act
+    fixture.WriteView("Edited");
+    WaitUntil(() => store.Catalog.Views.Single().Title == "Edited");
+
+    // Assert
+    store.Catalog.Error.ShouldBeNull();
+  }
+
+  [Fact]
+  public void ReloadsAViewAddedInANewNestedFolder()
+  {
+    // Arrange
+    using var fixture = new StoreFixture("analysis");
+    using var store = new BookStore(fixture.Root, fixture.Assets);
+
+    // Act
+    fixture.Write("analysis/nested/view.yaml", "title: Nested\ncolumns: [2024]\nrows:\n  - line: analysis.revenue\n");
+    fixture.WriteBook("analysis\n  - analysis/nested");
+    WaitUntil(() => store.Catalog.Views.Count == 2);
+
+    // Assert
+    store.Catalog.Error.ShouldBeNull();
+    store.Catalog.Views.Select(view => view.Title).ShouldBe(["Analysis", "Nested"]);
+  }
+
   [Fact]
   public void IgnoresFilesThatCannotAffectTheBook()
   {
