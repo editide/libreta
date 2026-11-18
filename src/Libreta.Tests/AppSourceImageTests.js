@@ -58,3 +58,10 @@ test('opening an image without a region clears the previous modal highlight', ()
 test('hidden source highlights are not painted', () => {
   assert.match(css, /\.source-image-highlight\[hidden\]\s*{\s*display: none;/);
 });
+
+test('the source preview crop is exactly two by one inside the bordered button', () => {
+  // The image's top is a percentage of the crop's height, so a border inside the ratio box would skew it.
+  assert.doesNotMatch(css, /\.source-image\.has-source-region\s*{[^}]*aspect-ratio/);
+  assert.match(css, /\.source-image-crop\s*{[^}]*aspect-ratio: 2 \/ 1;/);
+  assert.match(app, /<span class="source-image-crop">/);
+});

@@ -1701,11 +1701,13 @@ body.selecting-cells {
   grid-column: 1 / -1;
 }
 
-.source-image.has-source-region {
+.source-image-crop {
+  position: relative;
+  display: block;
   aspect-ratio: 2 / 1;
 }
 
-.source-image.has-source-region img {
+.source-image-crop img {
   position: absolute;
   top: var(--source-image-top, 0);
   left: var(--source-image-left, 0);
