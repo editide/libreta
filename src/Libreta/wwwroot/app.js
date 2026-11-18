@@ -2211,7 +2211,8 @@ function renderSource(cellSource) {
       `<rect x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}"></rect></svg>` : '';
     parts.push(`<button type="button" class="source-image${regionClass}" data-source-image="${escapeHtml(image)}" ` +
       `data-source-image-description="${escapeHtml(description)}"${regionData} aria-label="Open source image">` +
-      `<img src="${escapeHtml(image)}" alt="${escapeHtml(description)}">${highlight}</button>`);
+      `${region ? '<span class="source-image-crop">' : ''}<img src="${escapeHtml(image)}" ` +
+      `alt="${escapeHtml(description)}">${highlight}${region ? '</span>' : ''}</button>`);
   }
   parts.push('<div class="source-details">');
   if (details.length) {
