@@ -648,9 +648,7 @@ function render() {
       continue;
     }
     tr.innerHTML = `<th data-column="-1" title="${escapeHtml(row.label)}">${escapeHtml(row.label)}</th>` +
-      row.cells.map((cell, index) => `<td class="${[cell.kind, cell.text ? 'text' : '',
-        cell.unresolved ? 'unresolved' : '', cell.linked ? 'linked' : '', columnStyle(columns[index])].filter(Boolean).join(' ')}" ` +
-        `${cell.text ? `title="${escapeHtml(cell.exact)}" ` : ''}data-column="${index}">${cell.display}</td>`).join('');
+      row.cells.map((cell, index) => tableCellHtml(cell, columns[index], index)).join('');
     tr.dataset.name = row.name;
     tr.dataset.rowIndex = index;
     tr.style.setProperty('--indent-level', row.indent ?? 0);
@@ -932,6 +930,18 @@ function contextEntry(rowIndex, periodIndex) {
 // Shared by cellNodes and calculation references, so one finds the other.
 function coordinateKey(line, column) {
   return `${line}\u0000${column ?? ''}`;
+}
+
+function tableCellHtml(cell, column, index) {
+  const classes = [cell.kind, cell.text ? 'text' : '', cell.unresolved ? 'unresolved' : '',
+    cell.linked ? 'linked' : '', columnStyle(column)].filter(Boolean).join(' ');
+  const title = cell.text ? `title="${escapeHtml(cell.exact)}" ` : '';
+  return `<td class="${classes}" ${title}data-column="${index}">${escapeHtml(cell.display)}</td>`;
+}
+
+function valuesRowHtml(header, cell) {
+  const exact = exactDiffersFromDisplay(cell) ? `<td>${exactNumberHtml(cell.exact, cell.units)}</td>` : '<td></td>';
+  return `<tr><th>${escapeHtml(header.label)}</th><td>${escapeHtml(cell.display)}</td>${exact}</tr>`;
 }
 
 function columnStyle(column) {
@@ -1687,8 +1697,8 @@ function selectedRangeSummary() {
   const groups = new Map();
   let numericCount = 0;
   for (const cell of cells) {
+    if (cell.exact == null || cell.text) continue;
     const value = Number(displayedExactValue(cell));
-    if (cell.exact == null) continue;
     if (!Number.isFinite(value)) continue;
     numericCount++;
     const units = cell.units ?? '';
@@ -1817,11 +1827,7 @@ function renderPanel() {
   if (cell === null) {
     const chart = LINE_KINDS.has(entry.kind) ? renderChart(entry, cells, headers) : '';
     parts.push(`<div class="${chart ? 'overview-grid' : 'overview-single'}"><div class="values"><h3>Values</h3><table><tbody>`);
-    for (let i = 0; i < cells.length; i++) {
-      const exact = exactDiffersFromDisplay(cells[i])
-        ? `<td>${exactNumberHtml(cells[i].exact, cells[i].units)}</td>` : '<td></td>';
-      parts.push(`<tr><th>${escapeHtml(headers[i].label)}</th><td>${cells[i].display}</td>${exact}</tr>`);
-    }
+    for (let i = 0; i < cells.length; i++) parts.push(valuesRowHtml(headers[i], cells[i]));
     parts.push('</tbody></table></div>');
     parts.push(source, note, chart);
     parts.push('</div>');
