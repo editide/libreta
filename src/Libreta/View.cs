@@ -575,7 +575,15 @@ public class Book
     return BookStructure.Scope(definition, fullFolder);
   }
 
+  /// <summary>The scope's periods, or its nearest ancestor's. A folder with none to find, such as a folder of formulas
+  /// that only groups views in the sidebar, holds one figure per line in a <c>Value</c> column.</summary>
   public List<string> PeriodsFor(string scope)
+  {
+    List<string> periods = DeclaredPeriods(scope);
+    return periods.Count > 0 ? periods : ["Value"];
+  }
+
+  private List<string> DeclaredPeriods(string scope)
   {
     BookDefinition owner = DefinitionForScope(scope);
     foreach (string local in EnclosingScopes(LocalScope(owner, scope)))
@@ -588,9 +596,11 @@ public class Book
     return PeriodsByScope.GetValueOrDefault(owner.Namespace) ?? new List<string>();
   }
 
+  /// <summary>The periods a scope's checks run over: its own or inherited ones, or else every period of the folders
+  /// below it, which a check at a book's root compares across.</summary>
   public List<string> CheckPeriods(string scope)
   {
-    List<string> periods = PeriodsFor(scope);
+    List<string> periods = DeclaredPeriods(scope);
     if (periods.Count > 0)
     {
       return periods;

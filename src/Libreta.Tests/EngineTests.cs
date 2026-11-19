@@ -1423,6 +1423,29 @@ public class EngineTests
     missingCounterpart.Value.ShouldBeNull();
   }
 
+  [Fact]
+  public void AFolderWithNoPeriodsOfItsOwnOrInheritedHoldsOneValueColumn()
+  {
+    // Arrange
+    using var fixture = new TempFolder();
+    fixture.Write("book.yaml", "name: Groups\nshort_name: G\nnavigation: [derived/revenue]\n");
+    fixture.Write("derived/formulas.yaml", "formulas:\n  shared:\n    formula: 6 * 7\n");
+    fixture.Write("derived/revenue/formulas.yaml", "formulas:\n  doubled:\n    formula: shared * 2\n");
+    fixture.Write("derived/revenue/view.yaml", "title: Revenue\nrows:\n  - line: shared\n  - line: doubled\n");
+    Book book = Book.Load(fixture.Root);
+    var engine = new Engine(View.Load(book, fixture.PathTo("derived/revenue")));
+
+    // Act
+    List<string> periods = book.PeriodsFor("derived");
+    ResolvedCell shared = engine.Cell("derived.shared", "Value");
+    ResolvedCell doubled = engine.Cell("doubled", "Value");
+
+    // Assert
+    periods.ShouldBe(["Value"]);
+    shared.Value.ShouldBe(42);
+    doubled.Value.ShouldBe(84);
+  }
+
 
 }
 
