@@ -5,12 +5,13 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const app = fs.readFileSync(path.join(__dirname, '..', 'Libreta', 'wwwroot', 'app.js'), 'utf8');
+const treeStepsSource = app.match(/function treeSteps\([\s\S]*?\n\}/)?.[0];
 const viewTreeSource = app.match(/function viewTree\([\s\S]*?\n\}/)?.[0];
 const treeOrderSource = app.match(/function treeOrder\([\s\S]*?\n\}/)?.[0];
 assert.ok(viewTreeSource, 'app.js must define viewTree');
 assert.ok(treeOrderSource, 'app.js must define treeOrder');
 const context = vm.createContext({});
-vm.runInContext(`${viewTreeSource}\n${treeOrderSource}`, context);
+vm.runInContext(`${treeStepsSource}\n${viewTreeSource}\n${treeOrderSource}`, context);
 const viewOrder = (views) => vm.runInContext('treeOrder', context)(vm.runInContext('viewTree', context)(views));
 
 test('views cycle in the order the navigation tree shows them', () => {

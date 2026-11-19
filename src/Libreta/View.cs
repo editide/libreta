@@ -684,6 +684,14 @@ public class Book
         }
         continue;
       }
+      if (item.Heading.Length > 0)
+      {
+        foreach (string id in NavigationViewIds(definition, item.Children))
+        {
+          yield return id;
+        }
+        continue;
+      }
 
       yield return definition.ViewPrefix.Length == 0 ? item.View : $"{definition.ViewPrefix}/{item.View}";
       foreach (string id in NavigationViewIds(definition, item.Children))

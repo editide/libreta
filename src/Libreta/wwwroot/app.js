@@ -371,16 +371,46 @@ function renderNavigation() {
   navigation.scrollTop = scrollTop;
 }
 
+// A heading sits before the id segment at its depth and stands in for the folders beneath it, so only parent views
+// and the folders of an included book still nest there. A step's part keys its node: # keeps a heading apart from folders, and a full id prefix keeps
+// same-named views from different folders apart.
+function treeSteps(view, viewIds) {
+  const segments = view.id.split('/');
+  const bookDepth = view.book ? view.book.split('/').length : 0;
+  const steps = [];
+  let headed = false;
+  segments.forEach((segment, depth) => {
+    for (const heading of view.headings ?? []) {
+      if (heading.depth !== depth) continue;
+      steps.push({ part: `#${heading.name}`, heading: heading.name });
+      headed = true;
+    }
+    const prefix = segments.slice(0, depth + 1).join('/');
+    if (!headed || depth < bookDepth) steps.push({ part: segment, segment });
+    else if (prefix === view.id || viewIds.has(prefix)) steps.push({ part: prefix, segment });
+  });
+  return steps;
+}
+
+function treeKeys(view, viewIds) {
+  const keys = [];
+  for (const step of treeSteps(view, viewIds)) {
+    keys.push(keys.length ? `${keys[keys.length - 1]}/${step.part}` : step.part);
+  }
+  return keys;
+}
+
 function viewTree(views) {
   const root = { children: new Map(), view: null, key: '' };
+  const viewIds = new Set(views.map((view) => view.id));
   for (const view of views) {
     let node = root;
-    for (const segment of view.id.split('/')) {
-      const key = node.key ? `${node.key}/${segment}` : segment;
-      if (!node.children.has(segment)) {
-        node.children.set(segment, { children: new Map(), view: null, segment, key });
+    for (const step of treeSteps(view, viewIds)) {
+      const key = node.key ? `${node.key}/${step.part}` : step.part;
+      if (!node.children.has(step.part)) {
+        node.children.set(step.part, { children: new Map(), view: null, ...step, key });
       }
-      node = node.children.get(segment);
+      node = node.children.get(step.part);
     }
     node.view = view;
   }
@@ -401,7 +431,7 @@ function renderTreeChildren(container, node) {
     item.setAttribute('role', 'none');
     const row = document.createElement('div');
     row.className = 'tree-entry';
-    const title = child.view?.title ?? labelFor(child.segment);
+    const title = child.view?.title ?? child.heading ?? labelFor(child.segment);
     if (child.view) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -447,10 +477,9 @@ function renderTreeChildren(container, node) {
 // Only ever expands, so the reader's own expansions survive navigation.
 function expandAncestors(id) {
   if (!id) return;
-  const segments = id.split('/');
-  for (let depth = 1; depth <= segments.length; depth += 1) {
-    branchStates.set(segments.slice(0, depth).join('/'), true);
-  }
+  const views = catalog?.views ?? [];
+  const view = views.find((candidate) => candidate.id === id) ?? { id };
+  for (const key of treeKeys(view, new Set(views.map((candidate) => candidate.id)))) branchStates.set(key, true);
 }
 
 // A line no table shows has a view of its own, which the server builds on request and an export carries.

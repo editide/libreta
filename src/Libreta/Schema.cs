@@ -17,6 +17,7 @@ public class NavigationItem
 {
   public string View { get; set; } = "";
   public string Book { get; set; } = "";
+  public string Heading { get; set; } = "";
   public List<NavigationItem> Children { get; set; } = new List<NavigationItem>();
 }
 
