@@ -48,6 +48,7 @@ Tables can be organized at any depth beneath it, commonly by source document, wi
 Every owned folder containing a `view.yaml` is a view, discovered recursively, its id being the path relative to its book root.
 A view can contain nested views that reuse its lines; `book.yaml` controls their sidebar placement.
 Folders without a `view.yaml` can also hold facts, formulas, checks, and sensitivities for other views to use.
+Such a folder over views shows in the sidebar as a heading named after it, grouping them without being a view itself.
 Every CSV beneath a `facts/` folder is loaded, including files inside another directory named `facts`, exactly once.
 A nested book remains a book boundary and is not loaded as part of its parent.
 
@@ -355,8 +356,10 @@ A scope prefix such as `interim.self` means the same line in another folder, whi
 
 ### Single values
 
-A figure that holds once rather than per period, such as an assumption, a valuation, or `change` above, lives in a folder of one column, conventionally `Value`, as the DCF's inputs do.
-Facts get there with a `Value` header in their CSV; a folder of formulas alone sets its one column with `columns: [Value]` in its `view.yaml`, since a folder with no periods of its own inherits its parent's.
+A figure that holds once rather than per period, such as an assumption, a valuation, or `change` above, lives in a folder of one column, `Value`, as the DCF's inputs do.
+Facts get there with a `Value` header in their CSV.
+A folder of formulas alone, with no periods from a parent either, has the `Value` column without declaring it, so it needs no `view.yaml`.
+Beneath a folder of periods, which it would otherwise inherit, it sets its one column with `columns: [Value]` in its `view.yaml`.
 
 ```yaml
 # historical/summary/view.yaml

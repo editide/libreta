@@ -606,10 +606,11 @@ function render() {
 
   const head = el('head');
   const columns = payload.columns ?? [];
-  const tableWidth = `calc(var(--label-width) + ${columns.length} * var(--period-width))`;
-  document.querySelector('.table-viewport').style.setProperty('--table-width', tableWidth);
+  const widths = valueColumnWidths(columns.length, payload.rows ?? []);
+  document.querySelector('.table-viewport').style
+    .setProperty('--table-width', `calc(${['var(--label-width)', ...widths].join(' + ')})`);
   head.innerHTML = '<th></th>' + columns.map((column, index) =>
-    `<th class="${columnStyle(column)}" data-column="${index}" ` +
+    `<th class="${columnStyle(column)}" data-column="${index}" style="width: ${widths[index]}" ` +
     `title="${escapeHtml(column.label)}">${escapeHtml(column.label)}</th>`).join('');
   head.firstElementChild.appendChild(labelResizer);
   head.querySelectorAll('[data-column]').forEach((cell) => {
@@ -930,6 +931,28 @@ function contextEntry(rowIndex, periodIndex) {
 // Shared by cellNodes and calculation references, so one finds the other.
 function coordinateKey(line, column) {
   return `${line}\u0000${column ?? ''}`;
+}
+
+// Inter's tabular digits are .65em at every weight, so a bold total needs no more room than a regular row.
+// Other glyphs count as a full em, which errs wide.
+const DISPLAY_GLYPH_EMS = { ',': .32, '.': .32, '(': .38, ')': .38 };
+
+function displayEms(display) {
+  let ems = 0;
+  for (const char of display) ems += /\d/.test(char) ? .65 : DISPLAY_GLYPH_EMS[char] ?? 1;
+  return Math.round(ems * 100) / 100;
+}
+
+// A fixed-layout table cannot grow a column to fit a number, so each one is sized to its widest value up front.
+// Text cells are left out: they ellipsize instead.
+function valueColumnWidths(columnCount, rows) {
+  const ems = Array(columnCount).fill(0);
+  for (const row of rows) {
+    for (const [index, cell] of (row.cells ?? []).entries()) {
+      if (!cell.text) ems[index] = Math.max(ems[index], displayEms(cell.display ?? ''));
+    }
+  }
+  return ems.map((em) => em ? `max(var(--period-width), calc(${em}rem + 2 * var(--space-5)))` : 'var(--period-width)');
 }
 
 function tableCellHtml(cell, column, index) {
