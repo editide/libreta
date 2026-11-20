@@ -2531,12 +2531,14 @@ function restoreGridFocusAfterClick(event) {
   focusGridCell();
 }
 
-function cycleView(direction) {
+async function cycleView(direction) {
   const ids = treeOrder(viewTree(catalog?.views ?? []));
   const current = ids.indexOf(activeView);
   if (current < 0 || ids.length < 2) return;
   const next = (current + direction + ids.length) % ids.length;
-  openView(ids[next]).then(focusTable);
+  await openView(ids[next]);
+  if (navigationVisible) el('view-tree').querySelector('button.active')?.scrollIntoView({ block: 'nearest' });
+  focusTable();
 }
 
 function openShortcuts() {
