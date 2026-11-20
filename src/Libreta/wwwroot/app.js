@@ -644,6 +644,7 @@ function render() {
   head.firstElementChild.appendChild(labelResizer);
   head.querySelectorAll('[data-column]').forEach((cell) => {
     const periodIndex = Number(cell.dataset.column);
+    cell.tabIndex = -1;
     cell.setAttribute('aria-label', `${columns[periodIndex].label} overview`);
     cell.addEventListener('pointerdown', (event) => beginCellRangePointer(event, COLUMN_AXIS, periodIndex));
     cell.addEventListener('click', () => {
@@ -684,6 +685,7 @@ function render() {
     tr.style.setProperty('--indent-level', row.indent ?? 0);
     tr.querySelectorAll('[data-column]').forEach((cell) => {
       const periodIndex = Number(cell.dataset.column);
+      cell.tabIndex = -1;
       const isRowLabel = periodIndex === -1;
       if (!isRowLabel) cellNodes.set(coordinateKey(row.cells[periodIndex].line, row.cells[periodIndex].column), cell);
       cell.setAttribute('aria-label', isRowLabel
@@ -1019,27 +1021,34 @@ function locate(line, column) {
 }
 
 function selectInGrid(nextSelection, ranges) {
+  const checks = el('checks');
+  const openChecks = checks.querySelector(':scope > details[open]');
+  if (openChecks) openChecks.open = false;
+  checks.classList.remove('expanded');
   checksExpanded = false;
-  sensitivitySelection = null;
+  if (sensitivitySelection) {
+    sensitivitySelection = null;
+    renderSensitivities();
+  }
   selection = nextSelection;
   cellRanges = ranges;
 }
 
 function selectRow(index, focus = false) {
   selectInGrid({ index, periodIndex: null }, []);
-  render();
+  refreshGridSelection();
   if (focus) focusGridCell(index, null);
 }
 
 function selectColumn(periodIndex, focus = false) {
   selectInGrid({ index: COLUMN_AXIS, periodIndex }, []);
-  render();
+  refreshGridSelection();
   if (focus) focusGridCell(COLUMN_AXIS, periodIndex);
 }
 
 function inspectCell(index, periodIndex) {
   selectInGrid({ index, periodIndex }, [{ anchor: { index, periodIndex }, active: { index, periodIndex } }]);
-  render();
+  refreshGridSelection();
   focusGridCell(index, periodIndex);
 }
 
@@ -1130,7 +1139,7 @@ function syncGridSelection() {
       '.range-top, .range-right, .range-bottom, .range-left')
       .forEach((node) => node.classList.remove('selected', 'cell-selected', 'selected-cell', 'selected-column',
         'range-selected', 'range-top', 'range-right', 'range-bottom', 'range-left'));
-    section.querySelectorAll('[data-column]').forEach((cell) => {
+    section.querySelectorAll('[data-column][tabindex="0"], [aria-selected]').forEach((cell) => {
       cell.tabIndex = -1;
       cell.removeAttribute('aria-selected');
     });
@@ -1208,7 +1217,7 @@ function extendCellRange(index, periodIndex, focus = false) {
     : validCellCoordinate(selection) ? selection : { index, periodIndex };
   selectInGrid(selectionFor({ index, periodIndex }),
     [...cellRanges.slice(0, -1), { anchor: { ...anchor }, active: { index, periodIndex } }]);
-  render();
+  refreshGridSelection();
   if (focus) focusGridCell(index, periodIndex);
 }
 
@@ -1324,6 +1333,10 @@ function leaveInspector() {
 function clearSelection() {
   selection = null;
   cellRanges = [];
+  refreshGridSelection();
+}
+
+function refreshGridSelection() {
   syncGridSelection();
   renderPanel();
   highlightTableCalculation();
@@ -1387,7 +1400,7 @@ function moveSelection(index, direction, edge = false) {
   }
   const target = { index: next, periodIndex };
   selectInGrid(target, periodIndex === null ? [] : [{ anchor: { ...target }, active: { ...target } }]);
-  render();
+  refreshGridSelection();
   focusGridCell();
 }
 
