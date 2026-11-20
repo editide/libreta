@@ -2546,12 +2546,16 @@ function setBranchExpanded(key, expanded) {
   focusTreeItem(key);
 }
 
-// A heading has nothing to show itself, so opening it moves on to the first entry beneath it.
+// A heading has nothing to show itself, so opening it walks down through any nested headings to the first view.
 async function openBranch(key) {
-  if (el('view-tree').querySelector(`[data-branch="${CSS.escape(key)}"]`)?.getAttribute('aria-expanded') === 'false') {
-    setBranchExpanded(key, true);
+  let item = el('view-tree').querySelector(`[role="treeitem"][data-branch="${CSS.escape(key)}"]`);
+  while (item && !item.dataset.view) {
+    if (item.getAttribute('aria-expanded') === 'false') setBranchExpanded(item.dataset.branch, true);
+    const child = firstChildItem(item.dataset.branch);
+    if (!child) break;
+    item = child;
   }
-  await enterTreeItem(firstChildItem(key));
+  await enterTreeItem(item);
 }
 
 async function enterTreeItem(item) {
