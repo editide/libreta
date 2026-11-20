@@ -107,3 +107,35 @@ test('a view without headings keeps the keys its folders always had', () => {
   // Assert
   assert.deepEqual([...keys], ['derived', 'derived/summary']);
 });
+
+test('every heading, folder, and parent view with entries beneath it is a branch', () => {
+  // Arrange
+  const branchKeys = vm.runInContext(`${app.match(/function branchKeys\([\s\S]*?\n\}/)[0]}\nbranchKeys`, context);
+
+  // Act
+  const keys = branchKeys(viewTree(views));
+
+  // Assert
+  assert.deepEqual([...keys], ['#Statements', '#Statements/#Detail', '#Analysis', '#Costs', 'parent', 'parent/#Breakdown']);
+});
+
+test('the expand-all toggle reads a top-level group as open until the reader closes it', () => {
+  // Arrange
+  const states = new Map();
+  const groups = vm.createContext({ branchStates: states });
+  const anyBranchExpanded = vm.runInContext(
+    `${app.match(/function anyBranchExpanded\([\s\S]*?\n\}/)[0]}\nanyBranchExpanded`, groups);
+  const tree = viewTree(views);
+
+  // Act
+  const initially = anyBranchExpanded(tree);
+  for (const key of ['#Statements', '#Analysis', '#Costs']) states.set(key, false);
+  const headingsClosed = anyBranchExpanded(tree);
+  states.set('parent', true);
+  const parentOpened = anyBranchExpanded(tree);
+
+  // Assert
+  assert.equal(initially, true);
+  assert.equal(headingsClosed, false);
+  assert.equal(parentOpened, true);
+});

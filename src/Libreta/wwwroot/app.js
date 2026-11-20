@@ -369,6 +369,7 @@ function renderNavigation() {
   container.innerHTML = '';
   renderTreeChildren(container, viewTree(catalog?.views ?? []));
   navigation.scrollTop = scrollTop;
+  updateExpandAllButton();
 }
 
 // A heading sits before the id segment at its depth and stands in for the folders beneath it, so only parent views
@@ -432,27 +433,27 @@ function renderTreeChildren(container, node) {
     const row = document.createElement('div');
     row.className = 'tree-entry';
     const title = child.view?.title ?? child.heading ?? labelFor(child.segment);
+    const entry = document.createElement('button');
+    entry.type = 'button';
+    entry.textContent = title;
+    entry.title = title;
+    entry.dataset.branch = child.key;
+    entry.setAttribute('role', 'treeitem');
+    entry.tabIndex = -1;
     if (child.view) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'tree-view';
-      button.textContent = child.view.title;
-      button.title = child.view.title;
-      button.dataset.view = child.view.id;
-      button.setAttribute('role', 'treeitem');
+      entry.className = 'tree-view';
+      entry.dataset.view = child.view.id;
       const active = child.view.id === activeView;
-      button.classList.toggle('active', active);
-      if (active) button.setAttribute('aria-current', 'page');
-      button.setAttribute('aria-selected', String(active));
-      button.tabIndex = active ? 0 : -1;
-      button.addEventListener('click', () => selectNavigationView(button));
-      row.appendChild(button);
+      entry.classList.toggle('active', active);
+      if (active) entry.setAttribute('aria-current', 'page');
+      entry.setAttribute('aria-selected', String(active));
+      if (active) entry.tabIndex = 0;
+      entry.addEventListener('click', () => selectNavigationView(entry));
     } else {
-      const label = document.createElement('div');
-      label.className = 'tree-label';
-      label.textContent = title;
-      row.appendChild(label);
+      entry.className = 'tree-label';
+      entry.addEventListener('click', () => openBranch(child.key));
     }
+    row.appendChild(entry);
     // A folder without a view starts open: its label cannot be clicked open.
     const expanded = branchStates.get(child.key) ?? !child.view;
     if (child.children.size) {
@@ -463,7 +464,7 @@ function renderTreeChildren(container, node) {
       toggle.tabIndex = -1;
       toggle.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${title}`);
       toggle.setAttribute('aria-expanded', String(expanded));
-      row.querySelector('.tree-view')?.setAttribute('aria-expanded', String(expanded));
+      entry.setAttribute('aria-expanded', String(expanded));
       toggle.addEventListener('click', () => setBranchExpanded(child.key, !expanded));
       row.appendChild(toggle);
     }
@@ -472,6 +473,20 @@ function renderTreeChildren(container, node) {
     list.appendChild(item);
   }
   container.appendChild(list);
+}
+
+function branchKeys(node) {
+  const keys = node.key && node.children.size ? [node.key] : [];
+  for (const child of node.children.values()) keys.push(...branchKeys(child));
+  return keys;
+}
+
+// Unset states fall back to the defaults: a heading or folder starts open, a parent view closed.
+function anyBranchExpanded(node) {
+  for (const child of node.children.values()) {
+    if (child.children.size && (branchStates.get(child.key) ?? !child.view)) return true;
+  }
+  return false;
 }
 
 // Only ever expands, so the reader's own expansions survive navigation.
@@ -2497,16 +2512,21 @@ function toggleNavigation() {
 
 function focusNavigation() {
   if (!navigationVisible) setNavigationVisible(true);
-  const active = el('view-tree').querySelector('button.active');
-  focusNavigationView((active ?? el('view-tree').querySelector('.tree-view'))?.dataset.view);
+  const tree = el('view-tree');
+  focusTreeItem((tree.querySelector('button.active') ?? tree.querySelector('[role="treeitem"]'))?.dataset.branch);
 }
 
 function focusNavigationView(id) {
   if (!id) return;
-  const button = el('view-tree').querySelector(`.tree-view[data-view="${CSS.escape(id)}"]`);
-  if (!button) return;
-  button.focus({ preventScroll: true });
-  button.scrollIntoView({ block: 'nearest' });
+  focusTreeItem(el('view-tree').querySelector(`.tree-view[data-view="${CSS.escape(id)}"]`)?.dataset.branch);
+}
+
+function focusTreeItem(key) {
+  if (!key) return;
+  const item = el('view-tree').querySelector(`[role="treeitem"][data-branch="${CSS.escape(key)}"]`);
+  if (!item) return;
+  item.focus({ preventScroll: true });
+  item.scrollIntoView({ block: 'nearest' });
 }
 
 async function selectNavigationView(button) {
@@ -2523,7 +2543,56 @@ async function selectNavigationView(button) {
 function setBranchExpanded(key, expanded) {
   branchStates.set(key, expanded);
   renderNavigation();
-  focusNavigationView(key);
+  focusTreeItem(key);
+}
+
+// A heading has nothing to show itself, so opening it moves on to the first entry beneath it.
+async function openBranch(key) {
+  if (el('view-tree').querySelector(`[data-branch="${CSS.escape(key)}"]`)?.getAttribute('aria-expanded') === 'false') {
+    setBranchExpanded(key, true);
+  }
+  await enterTreeItem(firstChildItem(key));
+}
+
+async function enterTreeItem(item) {
+  if (!item) return;
+  if (item.dataset.view) await selectNavigationView(item);
+  else focusTreeItem(item.dataset.branch);
+}
+
+function firstChildItem(key) {
+  const entry = el('view-tree').querySelector(`[role="treeitem"][data-branch="${CSS.escape(key)}"]`);
+  return entry?.closest('li')?.querySelector(':scope > ul [role="treeitem"]') ?? null;
+}
+
+function setAllBranchesExpanded(expanded) {
+  const tree = viewTree(catalog?.views ?? []);
+  const focused = document.activeElement?.closest?.('#view-tree') ? document.activeElement.dataset.branch : null;
+  for (const key of branchKeys(tree)) branchStates.set(key, expanded);
+  renderNavigation();
+  if (focused === null || focused === undefined) return;
+  // Collapsing can hide the focused entry, so focus falls back to its nearest ancestor still shown.
+  const parts = focused.split('/');
+  for (let length = parts.length; length > 0; length--) {
+    const key = parts.slice(0, length).join('/');
+    if (el('view-tree').querySelector(`[role="treeitem"][data-branch="${CSS.escape(key)}"]`)) {
+      focusTreeItem(key);
+      return;
+    }
+  }
+}
+
+function toggleAllBranches() {
+  setAllBranchesExpanded(!anyBranchExpanded(viewTree(catalog?.views ?? [])));
+}
+
+function updateExpandAllButton() {
+  const expanded = anyBranchExpanded(viewTree(catalog?.views ?? []));
+  const button = el('expand-all');
+  const label = expanded ? 'Collapse all navigation groups' : 'Expand all navigation groups';
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.classList.toggle('expanded', expanded);
 }
 
 function focusTable() {
@@ -2816,42 +2885,47 @@ window.addEventListener('popstate', async (event) => {
 window.addEventListener('pagehide', persistHistoryStates);
 
 el('view-tree').addEventListener('keydown', (event) => {
-  if (event.altKey) return;
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
   if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', 'Escape'].includes(event.key)) return;
-  if (event.key === 'Escape' || event.key === 'Enter') {
-    event.preventDefault();
+  const items = Array.from(el('view-tree').querySelectorAll('[role="treeitem"]'));
+  const current = items.indexOf(document.activeElement);
+  if (current < 0) return;
+  event.preventDefault();
+  const item = items[current];
+  if (event.key === 'Escape' || event.key === 'Enter' && item.dataset.view) {
     focusTable();
     return;
   }
-  const buttons = Array.from(el('view-tree').querySelectorAll('.tree-view'));
-  const current = buttons.indexOf(document.activeElement);
-  if (current < 0) return;
-  event.preventDefault();
-  const button = buttons[current];
+  if (event.key === 'Enter') {
+    openBranch(item.dataset.branch);
+    return;
+  }
+  if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    setAllBranchesExpanded(event.key === 'ArrowRight');
+    return;
+  }
+  const expanded = item.getAttribute('aria-expanded');
   if (event.key === 'ArrowRight') {
-    if (button.getAttribute('aria-expanded') === 'false') {
-      setBranchExpanded(button.dataset.view, true);
-      return;
-    }
-    if (button.getAttribute('aria-expanded') === 'true') {
-      selectNavigationView(buttons[current + 1]);
-    }
+    if (expanded === 'false') setBranchExpanded(item.dataset.branch, true);
+    else if (expanded === 'true') enterTreeItem(firstChildItem(item.dataset.branch));
     return;
   }
   if (event.key === 'ArrowLeft') {
-    if (button.getAttribute('aria-expanded') === 'true') {
-      setBranchExpanded(button.dataset.view, false);
+    if (expanded === 'true') {
+      setBranchExpanded(item.dataset.branch, false);
       return;
     }
-    const parent = button.closest('ul')?.parentElement?.querySelector(':scope > .tree-entry > .tree-view');
-    if (parent) selectNavigationView(parent);
+    const parent = item.closest('ul')?.parentElement?.querySelector(':scope > .tree-entry > [role="treeitem"]');
+    if (parent) enterTreeItem(parent);
     return;
   }
   const next = event.key === 'Home' ? 0
-    : event.key === 'End' ? buttons.length - 1
-      : Math.max(0, Math.min(buttons.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)));
-  if (next !== current) selectNavigationView(buttons[next]);
+    : event.key === 'End' ? items.length - 1
+      : Math.max(0, Math.min(items.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)));
+  if (next !== current) enterTreeItem(items[next]);
 });
+
+el('expand-all').addEventListener('click', toggleAllBranches);
 
 // An exported page has no server to build an export.
 el('export-button').hidden = Boolean(snapshot);
