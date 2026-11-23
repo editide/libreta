@@ -74,7 +74,7 @@ public static partial class SourceRegionWriter
     var merged = new Dictionary<string, Dictionary<string, SourceRegion>>();
     if (request.Image is null)
     {
-      foreach ((string line, LineItem item) in YamlFile.Load<FactTableFile>(metadataPath).LineItems)
+      foreach ((string line, LineItem item) in FactTableReader.Load(metadataPath, YamlFile.Deserializer(), DiskFiles.Instance).LineItems)
       {
         merged[line] = new Dictionary<string, SourceRegion>(item.ImageRegions);
       }
