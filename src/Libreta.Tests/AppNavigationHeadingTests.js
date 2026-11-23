@@ -1,20 +1,8 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
-const vm = require('node:vm');
+const { loadApp } = require('./helpers/appHarness');
 
-const app = fs.readFileSync(path.join(__dirname, '..', 'Libreta', 'wwwroot', 'app.js'), 'utf8');
-const sources = ['treeSteps', 'viewTree', 'treeOrder', 'treeKeys'].map((name) => {
-  const source = app.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`))?.[0];
-  assert.ok(source, `app.js must define ${name}`);
-  return source;
-});
-const context = vm.createContext({});
-vm.runInContext(sources.join('\n'), context);
-const viewTree = vm.runInContext('viewTree', context);
-const treeOrder = vm.runInContext('treeOrder', context);
-const treeKeys = vm.runInContext('treeKeys', context);
+const app = loadApp();
 
 function outline(node, depth = 0) {
   const lines = [];
@@ -38,11 +26,8 @@ const views = [
 ];
 
 test('headings group views in place of the folder labels beneath them', () => {
-  // Arrange
-  // Act
-  const tree = viewTree(views);
+  const tree = app.viewTree(views);
 
-  // Assert
   assert.deepEqual(outline(tree), [
     '# Statements',
     '  operations',
@@ -58,34 +43,28 @@ test('headings group views in place of the folder labels beneath them', () => {
     '    parent/child',
     'loose'
   ]);
-  assert.deepEqual([...treeOrder(tree)], [
+  assert.deepEqual([...app.treeOrder(tree)], [
     'operations', 'balance', 'derived/summary', 'other/summary', 'derived/costs', 'parent', 'parent/child', 'loose'
   ]);
 });
 
 test('a view under headings expands every heading and parent view above it', () => {
-  // Arrange
   const viewIds = new Set(views.map((view) => view.id));
 
-  // Act
-  const keys = treeKeys(views[6], viewIds);
+  const keys = app.treeKeys(views[6], viewIds);
 
-  // Assert
   assert.deepEqual([...keys], ['parent', 'parent/#Breakdown', 'parent/#Breakdown/parent/child']);
 });
 
 test('a heading keeps the folder of an included book beneath it', () => {
-  // Arrange
   const books = ['alpha', 'beta'].map((book) => ({
     id: `${book}/analysis`,
     book,
     headings: [{ name: 'Companies', depth: 0 }, { name: 'Statements', depth: 1 }]
   }));
 
-  // Act
-  const tree = viewTree(books);
+  const tree = app.viewTree(books);
 
-  // Assert
   assert.deepEqual(outline(tree), [
     '# Companies',
     '  alpha/',
@@ -98,43 +77,30 @@ test('a heading keeps the folder of an included book beneath it', () => {
 });
 
 test('a view without headings keeps the keys its folders always had', () => {
-  // Arrange
   const view = { id: 'derived/summary' };
 
-  // Act
-  const keys = treeKeys(view, new Set([view.id]));
+  const keys = app.treeKeys(view, new Set([view.id]));
 
-  // Assert
   assert.deepEqual([...keys], ['derived', 'derived/summary']);
 });
 
 test('every heading, folder, and parent view with entries beneath it is a branch', () => {
-  // Arrange
-  const branchKeys = vm.runInContext(`${app.match(/function branchKeys\([\s\S]*?\n\}/)[0]}\nbranchKeys`, context);
+  const keys = app.branchKeys(app.viewTree(views));
 
-  // Act
-  const keys = branchKeys(viewTree(views));
-
-  // Assert
   assert.deepEqual([...keys], ['#Statements', '#Statements/#Detail', '#Analysis', '#Costs', 'parent', 'parent/#Breakdown']);
 });
 
 test('the expand-all toggle reads a top-level group as open until the reader closes it', () => {
-  // Arrange
-  const states = new Map();
-  const groups = vm.createContext({ branchStates: states });
-  const anyBranchExpanded = vm.runInContext(
-    `${app.match(/function anyBranchExpanded\([\s\S]*?\n\}/)[0]}\nanyBranchExpanded`, groups);
-  const tree = viewTree(views);
+  const instance = loadApp();
+  const states = instance.eval('branchStates');
+  const tree = instance.viewTree(views);
 
-  // Act
-  const initially = anyBranchExpanded(tree);
+  const initially = instance.anyBranchExpanded(tree);
   for (const key of ['#Statements', '#Analysis', '#Costs']) states.set(key, false);
-  const headingsClosed = anyBranchExpanded(tree);
+  const headingsClosed = instance.anyBranchExpanded(tree);
   states.set('parent', true);
-  const parentOpened = anyBranchExpanded(tree);
+  const parentOpened = instance.anyBranchExpanded(tree);
 
-  // Assert
   assert.equal(initially, true);
   assert.equal(headingsClosed, false);
   assert.equal(parentOpened, true);

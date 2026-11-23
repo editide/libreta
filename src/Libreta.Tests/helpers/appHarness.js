@@ -95,6 +95,7 @@ function loadApp(overrides = {}) {
     querySelector: bySelector,
     querySelectorAll: () => [],
     createElement: () => makeElement(),
+    elementFromPoint: () => null,
     addEventListener: () => {},
     removeEventListener: () => {}
   };
@@ -115,7 +116,8 @@ function loadApp(overrides = {}) {
     EventSource: class { addEventListener() {} close() {} },
     fetch: () => new Promise(() => {}),
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
-    requestAnimationFrame: (fn) => fn(),
+    requestAnimationFrame: () => 0,
+    cancelAnimationFrame: () => {},
     innerWidth: 1280,
     innerHeight: 800,
     addEventListener: () => {},
@@ -130,6 +132,13 @@ function loadApp(overrides = {}) {
   vm.createContext(context);
   appScript.runInContext(context);
   context.eval = (code) => vm.runInContext(code, context);
+  context.set = (values) => {
+    context.__values = values;
+    for (const key of Object.keys(values)) {
+      vm.runInContext(`${key} = __values[${JSON.stringify(key)}]`, context);
+    }
+    delete context.__values;
+  };
   return context;
 }
 
