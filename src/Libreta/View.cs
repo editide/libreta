@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
@@ -136,6 +137,34 @@ public class Book
     new Dictionary<CellCoordinate, List<string>>();
   private Dictionary<string, List<string>> ViewIdsByLine { get; } = new Dictionary<string, List<string>>();
   public IEnumerable<CellCoordinate> PresentedCoordinates => ViewIdsByCoordinate.Keys;
+  // Folders inheriting the same formats.yaml files share one formatter, so a book of hundreds of fact tables reads
+  // each file once.
+  private readonly ConcurrentDictionary<string, Formatter> formattersByFolder =
+    new ConcurrentDictionary<string, Formatter>(BookStructure.PathComparer);
+  private readonly ConcurrentDictionary<string, Formatter> formattersByFiles =
+    new ConcurrentDictionary<string, Formatter>(BookStructure.PathComparer);
+  private readonly IDeserializer formatsDeserializer = YamlFile.Deserializer();
+
+  // A cell resolves the same in every view but for its units' formats, so views sharing a formatter share the graph.
+  private readonly ConcurrentDictionary<Formatter, Lazy<Dictionary<CellCoordinate, List<CellCoordinate>>>>
+    presentedReaders = new ConcurrentDictionary<Formatter, Lazy<Dictionary<CellCoordinate, List<CellCoordinate>>>>();
+
+  public Dictionary<CellCoordinate, List<CellCoordinate>> PresentedReaders(Formatter formatter,
+    Func<Dictionary<CellCoordinate, List<CellCoordinate>>> build)
+  {
+    return presentedReaders.GetOrAdd(formatter,
+      _ => new Lazy<Dictionary<CellCoordinate, List<CellCoordinate>>>(build)).Value;
+  }
+
+  public Formatter FormatterFor(string folder)
+  {
+    return formattersByFolder.GetOrAdd(Path.GetFullPath(folder), full =>
+    {
+      List<string> paths = Formatter.LocateAll(full, Root, Source);
+      return formattersByFiles.GetOrAdd(string.Join('\n', paths),
+        _ => new Formatter(Formatter.Load(paths, formatsDeserializer, Source)));
+    });
+  }
 
   public static Book Load(string root, IBookFiles? source = null)
   {
@@ -772,7 +801,7 @@ public class Book
     string sourceImage = ResolveSourceImage(metadataPath, metadata.Source.Image);
     var loadedLines = new HashSet<string>();
     // Units decide whether a line holds text, so a typo in a numeric row still fails here, at its cell.
-    var formatter = new Formatter(Formatter.Load(Path.GetDirectoryName(csvPath)!, Root, YamlFile.Deserializer(), Source));
+    var formatter = FormatterFor(Path.GetDirectoryName(csvPath)!);
 
     for (int lineIndex = 1; lineIndex < lines.Count; lineIndex++)
     {
@@ -1179,7 +1208,7 @@ public class View
       Scope = scope,
       Checks = book.Checks.Where(check => check.Scope == checkScope).ToList(),
       Presentation = book.Presentations[id],
-      Formatter = new Formatter(Formatter.Load(folder, book.Root, YamlFile.Deserializer(), book.Source))
+      Formatter = book.FormatterFor(folder)
     };
   }
 
@@ -1200,7 +1229,7 @@ public class View
       Id = $"{LinePrefix}{line}",
       Scope = scope,
       Presentation = presentation,
-      Formatter = new Formatter(Formatter.Load(folder, book.Root, YamlFile.Deserializer(), book.Source))
+      Formatter = book.FormatterFor(folder)
     };
     presentation.Title = view.LabelOf(line);
     presentation.Subtitle = "No table shows this line, so it stands here with the lines it reads.";
@@ -1222,14 +1251,13 @@ public class View
 
   internal static View ForCheckScope(Book book, string folder)
   {
-    IDeserializer deserializer = YamlFile.Deserializer();
     string scope = book.Scope(folder);
     return new View
     {
       Book = book,
       Scope = scope,
       Checks = book.Checks.Where(check => check.Scope == scope).ToList(),
-      Formatter = new Formatter(Formatter.Load(folder, book.Root, deserializer, book.Source))
+      Formatter = book.FormatterFor(folder)
     };
   }
 

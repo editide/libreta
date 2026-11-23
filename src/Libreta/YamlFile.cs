@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using YamlDotNet.Core;
 using YamlDotNet.Core.Events;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+using YamlDotNet.Serialization.TypeInspectors;
 
 namespace Libreta;
 
@@ -16,7 +18,8 @@ public static class YamlFile
   {
     return builder
       .WithNamingConvention(UnderscoredNamingConvention.Instance)
-      .WithTypeConverter(new ViewColumnConverter());
+      .WithTypeConverter(new ViewColumnConverter())
+      .WithTypeInspector(inner => new AttributeCachingTypeInspector(inner));
   }
 
   public static T Load<T>(string path, IDeserializer? deserializer = null, IBookFiles? source = null)
@@ -29,6 +32,109 @@ public static class YamlFile
     {
       throw new InvalidDataException($"Invalid YAML in '{path}': {exception.Message}", exception);
     }
+  }
+
+
+}
+
+/// <summary>YamlDotNet reflects over a property's attributes every time it sets the property, which dominates loading a
+/// book of hundreds of files unless each property's are read once.</summary>
+public sealed class AttributeCachingTypeInspector : TypeInspectorSkeleton
+{
+  private readonly ITypeInspector inner;
+  private readonly ConcurrentDictionary<Type, IPropertyDescriptor[]> properties =
+    new ConcurrentDictionary<Type, IPropertyDescriptor[]>();
+
+  public AttributeCachingTypeInspector(ITypeInspector inner)
+  {
+    this.inner = inner;
+  }
+
+  public override IEnumerable<IPropertyDescriptor> GetProperties(Type type, object? container)
+  {
+    return properties.GetOrAdd(type, _ => inner.GetProperties(type, container)
+      .Select(property => (IPropertyDescriptor)new CachedAttributes(property))
+      .ToArray());
+  }
+
+  public override string GetEnumName(Type enumType, string name)
+  {
+    return inner.GetEnumName(enumType, name);
+  }
+
+  public override string GetEnumValue(object enumValue)
+  {
+    return inner.GetEnumValue(enumValue);
+  }
+
+  public override bool HasParseMethod(Type type)
+  {
+    return inner.HasParseMethod(type);
+  }
+
+  public override object Parse(string value, Type type)
+  {
+    return inner.Parse(value, type);
+  }
+
+  private sealed class CachedAttributes : IPropertyDescriptor
+  {
+    private readonly IPropertyDescriptor inner;
+    private readonly Lazy<Type?> converterType;
+    private readonly ConcurrentDictionary<Type, Attribute?> attributes = new ConcurrentDictionary<Type, Attribute?>();
+
+    public CachedAttributes(IPropertyDescriptor inner)
+    {
+      this.inner = inner;
+      converterType = new Lazy<Type?>(() => inner.ConverterType);
+    }
+
+    public string Name => inner.Name;
+
+    public bool AllowNulls => inner.AllowNulls;
+
+    public bool CanWrite => inner.CanWrite;
+
+    public Type Type => inner.Type;
+
+    public Type? TypeOverride
+    {
+      get => inner.TypeOverride;
+      set => inner.TypeOverride = value;
+    }
+
+    public int Order
+    {
+      get => inner.Order;
+      set => inner.Order = value;
+    }
+
+    public ScalarStyle ScalarStyle
+    {
+      get => inner.ScalarStyle;
+      set => inner.ScalarStyle = value;
+    }
+
+    public bool Required => inner.Required;
+
+    public Type? ConverterType => converterType.Value;
+
+    public T? GetCustomAttribute<T>() where T : Attribute
+    {
+      return (T?)attributes.GetOrAdd(typeof(T), _ => inner.GetCustomAttribute<T>());
+    }
+
+    public IObjectDescriptor Read(object target)
+    {
+      return inner.Read(target);
+    }
+
+    public void Write(object target, object? value)
+    {
+      inner.Write(target, value);
+    }
+
+
   }
 
 

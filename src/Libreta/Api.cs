@@ -180,7 +180,7 @@ public static class PayloadBuilder
   {
     ResolvedTable table = ResolvedTable.Build(view);
     var presentation = new Presentation(table.Coordinates(), false);
-    Dictionary<CellCoordinate, List<CellCoordinate>> readers = engine.Dependents(view.Book.PresentedCoordinates);
+    Dictionary<CellCoordinate, List<CellCoordinate>> readers = engine.PresentedReaders();
     var rows = new List<RowPayload>();
     var grid = new List<List<CellCoordinate>>();
     var values = new List<List<ResolvedCell>>();
@@ -592,7 +592,7 @@ public static class PayloadBuilder
     CellCoordinate coordinate = table.Coordinate(row, column)!.Value;
     var presentation = new Presentation(table.Coordinates(), true);
     CellPayload cell = Cell(view, engine, table.LineEntry(row, column), coordinate, engine.Cell(coordinate),
-      presentation, engine.Dependents(view.Book.PresentedCoordinates));
+      presentation, engine.PresentedReaders());
     return new CellDetailPayload(cell, presentation.Formulas);
   }
 

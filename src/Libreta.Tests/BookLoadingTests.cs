@@ -514,6 +514,68 @@ public class BookLoadingTests
     leaf.Checks.Select(check => check.Name).ShouldBe(new[] { "shared" });
   }
 
+  [Fact]
+  public void ReadsEachFormatsFileOnceForTheWholeBook()
+  {
+    // Arrange
+    using TempFolder folder = new TempFolder();
+    folder.Write("book.yaml", "name: Test\nshort_name: Test\nnavigation: []\n");
+    folder.Write("formats.yaml", "formats:\n  millions:\n    decimals: 0\n");
+    folder.Write("report/facts/first.csv", "line_item,2025\nrevenue,10\n");
+    folder.Write("report/facts/first.yaml", "table:\n  title: First\nline_items:\n  revenue: {}\n");
+    folder.Write("report/facts/second.csv", "line_item,2025\ncost,4\n");
+    folder.Write("report/facts/second.yaml", "table:\n  title: Second\nline_items:\n  cost: {}\n");
+    folder.Write("report/view.yaml", "title: Report\ncolumns: [2025]\nrows:\n  - line: revenue\n");
+    var files = new CountingFiles();
+
+    // Act
+    Book book = Book.Load(folder.Root, files);
+    View.Load(book, folder.PathTo("report"));
+    View.Load(book, folder.PathTo("report"));
+
+    // Assert
+    files.Reads(folder.PathTo("formats.yaml")).ShouldBe(1);
+  }
+
+  private sealed class CountingFiles : IBookFiles
+  {
+    private readonly Dictionary<string, int> reads = new Dictionary<string, int>();
+
+    public int Reads(string path)
+    {
+      return reads.GetValueOrDefault(Path.GetFullPath(path));
+    }
+
+    public bool FileExists(string path)
+    {
+      return File.Exists(path);
+    }
+
+    public bool DirectoryExists(string path)
+    {
+      return Directory.Exists(path);
+    }
+
+    public byte[] ReadAllBytes(string path)
+    {
+      string full = Path.GetFullPath(path);
+      reads[full] = Reads(full) + 1;
+      return File.ReadAllBytes(path);
+    }
+
+    public IEnumerable<string> Files(string folder, string pattern)
+    {
+      return Directory.GetFiles(folder, pattern, SearchOption.TopDirectoryOnly);
+    }
+
+    public IEnumerable<string> Directories(string folder)
+    {
+      return Directory.GetDirectories(folder);
+    }
+
+
+  }
+
   private sealed class BookFixture : TempFolder
   {
     public BookFixture(string csv, string extraMetadata = "", string? metadata = null)

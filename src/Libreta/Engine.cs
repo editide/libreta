@@ -172,6 +172,15 @@ public class Engine
     return dependencies;
   }
 
+  /// <summary>The readers of every cell the book's tables show, shared with the book's other views unless this engine
+  /// substitutes trial values.</summary>
+  public Dictionary<CellCoordinate, List<CellCoordinate>> PresentedReaders()
+  {
+    return substitutions.Count > 0
+      ? Dependents(_view.Book.PresentedCoordinates)
+      : _view.Book.PresentedReaders(_view.Formatter, () => Dependents(_view.Book.PresentedCoordinates));
+  }
+
   /// <summary>Every cell the roots reach, keyed to its direct readers, even intermediates no table shows.</summary>
   public Dictionary<CellCoordinate, List<CellCoordinate>> Dependents(IEnumerable<CellCoordinate> roots)
   {

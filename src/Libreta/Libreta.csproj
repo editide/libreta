@@ -9,6 +9,9 @@
     <RunWorkingDirectory>$(MSBuildStartupDirectory)</RunWorkingDirectory>
     <!-- UseStaticFiles serves wwwroot as it is, so precompressed copies would ship unread. -->
     <CompressionEnabled>false</CompressionEnabled>
+    <!-- Profiling the YAML parser delays its optimized code past the few seconds a book takes to load, which then
+         takes twice as long. -->
+    <TieredPGO>false</TieredPGO>
   </PropertyGroup>
 
   <ItemGroup>
