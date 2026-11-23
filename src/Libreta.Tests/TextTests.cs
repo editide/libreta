@@ -42,6 +42,35 @@ public class TextTests
   }
 
   [Fact]
+  public void KeepsAQuotedCommaInATextCell()
+  {
+    // Arrange
+    using var fixture = new TextFixture();
+    fixture.Write("ratings/facts/ratings.csv", "line_item,2024,2025\nmoodys,\"Smith, Jones\",Ba2\n");
+
+    // Act
+    Engine engine = new Engine(fixture.LoadView());
+
+    // Assert
+    engine.Cell("moodys", "2024").Text.ShouldBe("Smith, Jones");
+    engine.Cell("moodys", "2025").Text.ShouldBe("Ba2");
+  }
+
+  [Fact]
+  public void RejectsAnUnterminatedQuote()
+  {
+    // Arrange
+    using var fixture = new TextFixture();
+    fixture.Write("ratings/facts/ratings.csv", "line_item,2024,2025\nmoodys,\"Smith, Jones,Ba2\n");
+
+    // Act
+    InvalidDataException exception = Should.Throw<InvalidDataException>(() => fixture.LoadView());
+
+    // Assert
+    exception.Message.ShouldContain("ratings.csv:2' has a malformed quoted cell");
+  }
+
+  [Fact]
   public void KeepsANumberInTextUnitsAsPrinted()
   {
     // Arrange
