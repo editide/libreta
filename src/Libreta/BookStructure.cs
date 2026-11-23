@@ -425,9 +425,13 @@ public sealed class BookStructure
       : "";
   }
 
-  internal static StringComparer PathComparer => OperatingSystem.IsWindows()
-    ? StringComparer.OrdinalIgnoreCase
-    : StringComparer.Ordinal;
+  internal static StringComparison PathComparison => OperatingSystem.IsLinux()
+    ? StringComparison.Ordinal
+    : StringComparison.OrdinalIgnoreCase;
+
+  internal static StringComparer PathComparer => OperatingSystem.IsLinux()
+    ? StringComparer.Ordinal
+    : StringComparer.OrdinalIgnoreCase;
 
 
 }

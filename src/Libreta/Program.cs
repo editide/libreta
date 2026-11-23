@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
@@ -258,8 +259,8 @@ app.UseStaticFiles(new StaticFileOptions
 JsonSerializerOptions jsonOptions = PayloadJson.Options;
 app.MapGet("/api/catalog", () => Results.Text(
   JsonSerializer.Serialize(store.Catalog, jsonOptions), "application/json"));
-app.MapGet("/api/view", (string id) => store.TryGetView(id, out ViewPayload? payload)
-  ? Results.Text(JsonSerializer.Serialize(payload, jsonOptions), "application/json")
+app.MapGet("/api/view", (string id) => store.TryGetViewJson(id, out string? json)
+  ? Results.Text(json!, "application/json")
   : Results.NotFound());
 app.MapGet("/api/source-image", (string path) =>
   store.TryGetSourceImage(path, out string? image, out string? contentType)
@@ -501,9 +502,10 @@ public class BookStore : IDisposable
   private List<string> watchedRoots = [];
   private BookSnapshot snapshot = new BookSnapshot(
     new ViewCatalog("", "", new List<ViewCatalogEntry>(), 0),
-    new Dictionary<string, ViewPayload>(),
+    new ConcurrentDictionary<string, Lazy<CachedView>>(StringComparer.Ordinal),
     new HashSet<string>(),
-    null);
+    null,
+    0);
   private long version;
   private long assetVersion;
   private bool disposed;
@@ -533,31 +535,87 @@ public class BookStore : IDisposable
   /// <summary>The last book that loaded, kept through a load that fails.</summary>
   public Book? Book => Volatile.Read(ref snapshot).Book;
 
-  /// <summary>A view of the book's, or a line no table shows, built on request since only a link reaches one.
+  /// <summary>A view of the book's, or a line no table shows, built on first request and cached for this version.
   /// </summary>
   public bool TryGetView(string id, out ViewPayload? payload)
   {
-    BookSnapshot current = Volatile.Read(ref snapshot);
-    if (current.Views.TryGetValue(id, out payload))
+    if (TryGetCachedView(id, out CachedView? cached))
     {
+      payload = cached!.Payload;
+      return true;
+    }
+    payload = null;
+    return false;
+  }
+
+  /// <summary>The cached JSON for a view, built once per book version.</summary>
+  public bool TryGetViewJson(string id, out string? json)
+  {
+    if (TryGetCachedView(id, out CachedView? cached))
+    {
+      json = cached!.Json;
+      return true;
+    }
+    json = null;
+    return false;
+  }
+
+  private bool TryGetCachedView(string id, out CachedView? cached)
+  {
+    BookSnapshot current = Volatile.Read(ref snapshot);
+    if (current.Book is not Book book)
+    {
+      cached = null;
+      return false;
+    }
+    if (book.Views.TryGetValue(id, out View? view))
+    {
+      cached = current.Views.GetOrAdd(id,
+        _ => new Lazy<CachedView>(() => BuildView(current, id, view), LazyThreadSafetyMode.ExecutionAndPublication))
+        .Value;
       return true;
     }
     string line = id.StartsWith(View.LinePrefix, StringComparison.Ordinal) ? id[View.LinePrefix.Length..] : "";
-    if (current.Book is not Book book || !(book.Formulas.ContainsKey(line) || book.Facts.ContainsKey(line)))
+    if (line.Length == 0 || !(book.Formulas.ContainsKey(line) || book.Facts.ContainsKey(line)))
     {
+      cached = null;
       return false;
     }
-    long built = current.Catalog.Version;
+    cached = current.Views.GetOrAdd(id,
+      _ => new Lazy<CachedView>(() => BuildLineView(current, line), LazyThreadSafetyMode.ExecutionAndPublication))
+      .Value;
+    return true;
+  }
+
+  private static CachedView BuildView(BookSnapshot current, string id, View view)
+  {
+    ViewPayload payload;
     try
     {
-      View view = View.ForLine(book, line);
-      payload = PayloadBuilder.Build(view, new Engine(view), built);
+      payload = PayloadBuilder.Build(view, new Engine(view), current.BookVersion);
     }
     catch (Exception exception)
     {
-      payload = new ViewPayload { Title = line, Error = exception.Message, Version = built };
+      string title = current.Catalog.Views.FirstOrDefault(entry => entry.Id == id)?.Title ?? id;
+      payload = new ViewPayload { Title = title, Error = exception.Message, Version = current.BookVersion };
+      Console.WriteLine($"  error     {DateTime.Now:HH:mm:ss}  {id}: {exception.Message}");
     }
-    return true;
+    return new CachedView(payload, JsonSerializer.Serialize(payload, PayloadJson.Options));
+  }
+
+  private static CachedView BuildLineView(BookSnapshot current, string line)
+  {
+    ViewPayload payload;
+    try
+    {
+      View view = View.ForLine(current.Book!, line);
+      payload = PayloadBuilder.Build(view, new Engine(view), current.BookVersion);
+    }
+    catch (Exception exception)
+    {
+      payload = new ViewPayload { Title = line, Error = exception.Message, Version = current.BookVersion };
+    }
+    return new CachedView(payload, JsonSerializer.Serialize(payload, PayloadJson.Options));
   }
 
   public bool TryGetSourceImage(string image, out string? path, out string? contentType)
@@ -810,32 +868,26 @@ public class BookStore : IDisposable
         Console.WriteLine($"  error     {DateTime.Now:HH:mm:ss}  book: {exception.Message}");
         return;
       }
-      var views = new Dictionary<string, ViewPayload>();
-      foreach ((string id, View view) in book.Views)
-      {
-        try
-        {
-          views[id] = PayloadBuilder.Build(view, new Engine(view), next);
-        }
-        catch (Exception exception)
-        {
-          string title = catalog.Views.FirstOrDefault(entry => entry.Id == id)?.Title ?? id;
-          views[id] = new ViewPayload { Title = title, Error = exception.Message, Version = next };
-          Console.WriteLine($"  error     {DateTime.Now:HH:mm:ss}  {id}: {exception.Message}");
-        }
-      }
       HashSet<string> sourceImages = SourceImages(book);
-      Volatile.Write(ref snapshot, new BookSnapshot(catalog, views, sourceImages, book));
+      Volatile.Write(ref snapshot, new BookSnapshot(
+        catalog,
+        new ConcurrentDictionary<string, Lazy<CachedView>>(StringComparer.Ordinal),
+        sourceImages,
+        book,
+        next));
       Interlocked.Exchange(ref version, next);
-      Console.WriteLine($"  reloaded  {DateTime.Now:HH:mm:ss}  {views.Count} views");
+      Console.WriteLine($"  reloaded  {DateTime.Now:HH:mm:ss}  {book.Views.Count} views");
     }
   }
 
+  private record CachedView(ViewPayload Payload, string Json);
+
   private record BookSnapshot(
     ViewCatalog Catalog,
-    IReadOnlyDictionary<string, ViewPayload> Views,
+    ConcurrentDictionary<string, Lazy<CachedView>> Views,
     IReadOnlySet<string> SourceImages,
-    Book? Book);
+    Book? Book,
+    long BookVersion);
 
 
 }

@@ -291,7 +291,7 @@ public class Formatter
     return string.Equals(
       Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar),
       Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar),
-      OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+      BookStructure.PathComparison);
   }
 
   private static void Apply(FormatSpecOverride format, FormatSpecOverride overrides)

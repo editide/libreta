@@ -267,6 +267,32 @@ public class BookStoreTests
     store.Version.ShouldBe(initialVersion);
   }
 
+  [Fact]
+  public void CachesBuiltViewPayloadsAndJsonUntilTheNextReload()
+  {
+    // Arrange
+    using var fixture = new StoreFixture("analysis");
+    using var store = new BookStore(fixture.Root, fixture.Assets);
+
+    // Act
+    store.TryGetView("analysis", out ViewPayload? first).ShouldBeTrue();
+    store.TryGetView("analysis", out ViewPayload? second).ShouldBeTrue();
+    store.TryGetViewJson("analysis", out string? firstJson).ShouldBeTrue();
+    store.TryGetViewJson("analysis", out string? secondJson).ShouldBeTrue();
+    fixture.WriteView("Updated");
+    WaitUntil(() => store.Catalog.Views.Single().Title == "Updated");
+    store.TryGetView("analysis", out ViewPayload? reloaded).ShouldBeTrue();
+    store.TryGetViewJson("analysis", out string? reloadedJson).ShouldBeTrue();
+
+    // Assert
+    ReferenceEquals(first, second).ShouldBeTrue();
+    ReferenceEquals(firstJson, secondJson).ShouldBeTrue();
+    firstJson!.ShouldContain("\"title\":\"Analysis\"");
+    reloaded!.Title.ShouldBe("Updated");
+    reloadedJson!.ShouldContain("\"title\":\"Updated\"");
+    ReferenceEquals(first, reloaded).ShouldBeFalse();
+  }
+
   private static void WaitUntil(Func<bool> condition)
   {
     DateTime deadline = DateTime.UtcNow.AddSeconds(5);
