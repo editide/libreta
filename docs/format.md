@@ -163,7 +163,8 @@ A line whose units format [text](#text) holds each cell as printed, such as a cr
 `formats.yaml` controls the displayed dash.
 An empty cell supplies no fact for that period, allowing a formula or override to fill it; otherwise it remains unresolved.
 Each row must contain one cell per period, including empty trailing cells, and period headers must be unique.
-The first header must be `line_item`; quoted CSV fields and thousands separators are not supported.
+The first header must be `line_item`, and thousands separators are not supported.
+A cell in double quotes may hold commas, with `""` standing for a quote, but no cell spans lines.
 
 Several fact tables in one scope may contain the same line when the populated periods do not overlap.
 Libreta combines those fragments into one line while each cell keeps its own table's provenance, so annual and interim filings can contribute columns to one view.
@@ -449,7 +450,7 @@ defaults:
 
 Units whose format sets [`text`](#formats), such as the built-in `text`, make a line hold text, and they are the only way to: a line in other units fails at the first cell that is not a number or a date.
 Every cell of a text line is kept as printed, a dash or a number included, and shows as written.
-The CSV splits on commas, so a cell cannot contain one.
+A cell holding a comma is quoted, as in `"Smith, Jones"`.
 
 No formula or check reads a text line, and one that does is an error naming the line.
 A calculated column leaves a text line empty rather than reading it.
