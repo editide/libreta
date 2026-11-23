@@ -788,7 +788,10 @@ public class Book
     {
       throw new InvalidDataException($"'{csvPath}' is empty");
     }
-    string[] header = lines[0].Split(',');
+    if (!Csv.TrySplit(lines[0], out string[] header))
+    {
+      throw new InvalidDataException($"'{csvPath}:1' has a malformed quoted cell");
+    }
     if (header.Length < 2 || header[0].Trim() != "line_item")
     {
       throw new InvalidDataException($"'{csvPath}:1' must begin with line_item and at least one period");
@@ -835,7 +838,10 @@ public class Book
       {
         continue;
       }
-      string[] cells = line.Split(',');
+      if (!Csv.TrySplit(line, out string[] cells))
+      {
+        throw new InvalidDataException($"'{csvPath}:{lineIndex + 1}' has a malformed quoted cell");
+      }
       if (cells.Length != header.Length)
       {
         throw new InvalidDataException(

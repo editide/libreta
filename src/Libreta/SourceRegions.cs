@@ -51,7 +51,9 @@ public static partial class SourceRegionWriter
 
     List<string[]> rows = File.ReadAllLines(csvPath)
       .Where(row => row.Trim().Length > 0)
-      .Select(row => row.Split(',').Select(cell => cell.Trim()).ToArray())
+      .Select(row => Csv.TrySplit(row, out string[] cells)
+        ? cells.Select(cell => cell.Trim()).ToArray()
+        : throw new InvalidDataException($"'{csvPath}' has a malformed quoted cell"))
       .ToList();
     List<string> periods = rows[0].Skip(1).ToList();
     HashSet<string> lines = rows.Skip(1).Select(row => row[0]).ToHashSet();
