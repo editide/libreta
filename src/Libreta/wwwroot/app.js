@@ -56,6 +56,7 @@ const phoneLayout =
 // A phone has no room beside the table, so its navigation opens over it, and only when asked.
 let navigationVisible = !embedded && !compactLayout.matches && stored('navigationVisible') !== 'false';
 let checksExpanded = null;
+let openChecks = new Set();
 const requests = new RequestCoordinator();
 const branchStates = new Map();
 const formulaExpansions = new Map();
@@ -547,6 +548,7 @@ function clearViewState() {
   cellRanges = [];
   sensitivitySelection = null;
   checksExpanded = null;
+  openChecks = new Set();
 }
 
 function requestedView() {
@@ -606,7 +608,8 @@ function rememberHistoryEntry() {
   const viewport = document.querySelector('.table-viewport');
   historyStates.delete(historyEntry);
   historyStates.set(historyEntry, JSON.parse(JSON.stringify({
-    view: activeView, selection, cellRanges, sensitivitySelection, checksExpanded, calculationTrail,
+    view: activeView, selection, cellRanges, sensitivitySelection, checksExpanded,
+    openChecks: [...openChecks], calculationTrail,
     scroll: { left: viewport.scrollLeft, top: viewport.scrollTop }
   })));
   while (historyStates.size > 100) historyStates.delete(historyStates.keys().next().value);
@@ -629,6 +632,7 @@ function restoreViewState(state) {
   cellRanges = state.cellRanges;
   sensitivitySelection = state.sensitivitySelection;
   checksExpanded = state.checksExpanded;
+  openChecks = new Set(state.openChecks ?? []);
   calculationTrail = state.calculationTrail;
 }
 
@@ -892,6 +896,10 @@ function handleSensitivityKey(event, sensitivity, section, row, column) {
   selectSensitivityCell(sensitivity, section, nextRow, nextColumn);
 }
 
+function checkKey(check) {
+  return `${check.name}\u0000${check.formula}`;
+}
+
 function renderChecks() {
   const checks = payload.checks ?? [];
   if (!checks.length) {
@@ -908,7 +916,7 @@ function renderChecks() {
       <span>Checks</span>
       <span class="check-count ${failed ? 'fail' : 'pass'}">${checks.length - failed}/${checks.length} pass</span>
     </summary>
-    <div class="check-list">${checks.map((c) => `<details class="check ${c.passed ? 'pass' : 'fail'}">
+    <div class="check-list">${checks.map((c) => `<details class="check ${c.passed ? 'pass' : 'fail'}"${openChecks.has(checkKey(c)) ? ' open' : ''}>
       <summary>
         <span class="badge">${c.passed ? 'PASS' : 'FAIL'}</span>
         <span>${escapeHtml(c.name)}</span>
@@ -922,10 +930,19 @@ function renderChecks() {
     </details>`).join('')}</div>
   </details>`;
   container.querySelector(':scope > details').addEventListener('toggle', (event) => {
+    if (!event.currentTarget.isConnected) return;
     checksExpanded = event.currentTarget.open;
     container.classList.toggle('expanded', checksExpanded);
     if (!checksExpanded || selection === null) return;
     clearSelection();
+  });
+  container.querySelectorAll('.check').forEach((details, index) => {
+    const key = checkKey(checks[index]);
+    details.addEventListener('toggle', (event) => {
+      if (!event.currentTarget.isConnected) return;
+      if (event.currentTarget.open) openChecks.add(key);
+      else openChecks.delete(key);
+    });
   });
 }
 
