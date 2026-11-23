@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using Shouldly;
 using Xunit;
@@ -67,6 +68,25 @@ public class BookLoadingTests
     // Assert
     exception.Message.ShouldContain("facts.yaml");
     exception.Message.ShouldContain("mystery");
+  }
+
+  [Fact]
+  public void ReportsTheFirstBrokenFactTableInPathOrder()
+  {
+    // Arrange
+    using BookFixture fixture = new("line_item,2025\nrevenue,1");
+    for (int index = 0; index < 40; index++)
+    {
+      fixture.WriteFactTable($"table-{index:D2}", $"line_item,2025\nline_{index},1", "line_items: {}\n");
+    }
+    fixture.WriteFactTable("table-10", "line_item,2025\nbroken", "line_items: {}\n");
+    fixture.WriteFactTable("table-30", "line_item,2025\nline_30,1", "line_items: [\n");
+
+    // Act
+    InvalidDataException exception = Should.Throw<InvalidDataException>(() => Book.Load(fixture.Root));
+
+    // Assert
+    exception.Message.ShouldContain("table-10.csv");
   }
 
   [Theory]
@@ -539,7 +559,7 @@ public class BookLoadingTests
 
   private sealed class CountingFiles : IBookFiles
   {
-    private readonly Dictionary<string, int> reads = new Dictionary<string, int>();
+    private readonly ConcurrentDictionary<string, int> reads = new ConcurrentDictionary<string, int>();
 
     public int Reads(string path)
     {
@@ -559,7 +579,7 @@ public class BookLoadingTests
     public byte[] ReadAllBytes(string path)
     {
       string full = Path.GetFullPath(path);
-      reads[full] = Reads(full) + 1;
+      reads.AddOrUpdate(full, 1, (_, count) => count + 1);
       return File.ReadAllBytes(path);
     }
 

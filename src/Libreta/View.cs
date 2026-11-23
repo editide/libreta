@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using YamlDotNet.Serialization;
 
@@ -172,16 +173,25 @@ public class Book
     BookStructure structure = BookStructure.Load(root, source);
     var book = new Book { Root = structure.Root, Structure = structure };
 
-    foreach (BookDefinition definition in structure.Definitions)
+    // Reading and parsing the tables dominates loading, so it runs in parallel; merging stays in path order, so a book
+    // loads, and its first broken table fails, as it would one table at a time.
+    var tables = structure.Definitions
+      .SelectMany(definition => structure.FilesBelow(definition, "*.csv", "facts")
+        .Select(file => (Definition: definition, CsvPath: file.Path, file.ScopeFolder)))
+      .ToList();
+    var reads = tables
+      .AsParallel()
+      .AsOrdered()
+      .Select(table => ReadFactTable(table.CsvPath, deserializer, structure.Source))
+      .ToList();
+    for (int index = 0; index < tables.Count; index++)
     {
-      foreach ((string csvPath, string scopeFolder) in structure.FilesBelow(definition, "*.csv", "facts"))
-      {
-        string metadataPath = Path.ChangeExtension(csvPath, ".yaml");
-        FactTableFile metadata = YamlFile.Load<FactTableFile>(metadataPath, deserializer, structure.Source);
-        string scope = BookStructure.Scope(definition, scopeFolder);
-        book.FoldersByScope.TryAdd(scope, scopeFolder);
-        book.LoadFactTable(csvPath, metadataPath, metadata, scope, definition.File);
-      }
+      (BookDefinition definition, string csvPath, string scopeFolder) = tables[index];
+      (FactTableFile? metadata, string? csv, ExceptionDispatchInfo? failure) = reads[index];
+      failure?.Throw();
+      string scope = BookStructure.Scope(definition, scopeFolder);
+      book.FoldersByScope.TryAdd(scope, scopeFolder);
+      book.LoadFactTable(csvPath, Path.ChangeExtension(csvPath, ".yaml"), metadata!, csv!, scope, definition.File);
     }
 
     var formulaFiles = new List<(string Scope, FormulasFile File)>();
@@ -744,15 +754,30 @@ public class Book
     }
   }
 
+  private static (FactTableFile? Metadata, string? Csv, ExceptionDispatchInfo? Failure) ReadFactTable(string csvPath,
+    IDeserializer deserializer, IBookFiles source)
+  {
+    try
+    {
+      FactTableFile metadata = FactTableReader.Load(Path.ChangeExtension(csvPath, ".yaml"), deserializer, source);
+      return (metadata, source.ReadAllText(csvPath), null);
+    }
+    catch (Exception exception)
+    {
+      return (null, null, ExceptionDispatchInfo.Capture(exception));
+    }
+  }
+
   private void LoadFactTable(
     string csvPath,
     string metadataPath,
     FactTableFile metadata,
+    string csv,
     string scope,
     BookFile bookFile)
   {
     var lines = new List<string>();
-    using (var reader = new StringReader(Source.ReadAllText(csvPath)))
+    using (var reader = new StringReader(csv))
     {
       for (string? read = reader.ReadLine(); read is not null; read = reader.ReadLine())
       {

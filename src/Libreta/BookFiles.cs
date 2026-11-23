@@ -5,7 +5,8 @@ using System.Text;
 namespace Libreta;
 
 /// <summary>Where a book's files are read from: the disk, or a commit's tree. Paths are the working tree's either way,
-/// so a book read at a commit names its files as the working tree does.</summary>
+/// so a book read at a commit names its files as the working tree does. A book reads its fact tables on several
+/// threads at once.</summary>
 public interface IBookFiles
 {
   bool FileExists(string path);
