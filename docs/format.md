@@ -48,7 +48,7 @@ Tables can be organized at any depth beneath it, commonly by source document, wi
 Every owned folder containing a `view.yaml` is a view, discovered recursively, its id being the path relative to its book root.
 A view can contain nested views that reuse its lines; `book.yaml` controls their sidebar placement.
 Folders without a `view.yaml` can also hold facts, formulas, checks, and sensitivities for other views to use.
-Such a folder over views shows in the sidebar as a heading named after it, grouping them without being a view itself.
+Such a folder over views shows in the sidebar as a label named after it, grouping them without being a view itself, unless a [navigation heading](#navigation-and-scope) groups them instead.
 Every CSV beneath a `facts/` folder is loaded, including files inside another directory named `facts`, exactly once.
 A nested book remains a book boundary and is not loaded as part of its parent.
 
@@ -698,8 +698,41 @@ List order is display order, and nesting defines sidebar nesting.
 Every discovered view must appear exactly once.
 An explicitly included child keeps its own navigation rule, while `book: child_id` inserts that complete subtree into its parent.
 
+A heading groups views in the sidebar without being a folder or a view.
+
+```yaml
+navigation:
+  - heading: Financial statements
+    children:
+      - operations
+      - balance-sheet
+      - heading: Supplemental
+        children:
+          - cash-flow-supplement
+  - compute-control:
+      - heading: Valuation
+        children:
+          - compute-control/values
+          - compute-control/dilution
+      - compute-control/ownership
+  - heading: Companies
+    children:
+      - book: nvidia
+```
+
+A heading entry holds exactly two keys: `heading`, its display name, and `children`, a non-empty list of views, headings, and `book:` entries.
+Headings nest, and sibling headings need distinct names.
+`- operations: [...]` remains a parent view, and so does `- heading: [...]`, the view whose id is `heading`; only a mapping with a `heading` name and `children` is a heading, so a heading can share any view's name.
+
+A heading owns no lines and changes no references, which leaves regrouping a finished book to `book.yaml` alone.
+It is transparent to the other navigation rules: every view still appears exactly once, and a heading inside a parent view's children may hold only views nested beneath that parent.
+
+Beneath a heading, the sidebar nests views only under their parent views and included books, and the heading takes the place of any folder label between them.
+Outside headings, a folder without a `view.yaml` still shows as a label over the views inside it.
+
 Short line references resolve first in the view folder and then in each ancestor folder, so a nested view presents its parent's facts and formulas without copying them.
 Qualified references resolve from the book root, so calculation dependencies remain independent of navigation nesting.
+Navigation order, headings included, decides which view presents a line first, in the page and in the HTML and workbook exports.
 
 ## Sensitivities
 

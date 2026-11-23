@@ -265,10 +265,21 @@ public sealed class BookStructure
         navigation.Add(new NavigationItem { View = scalar.Value });
         continue;
       }
+      if (node is YamlMappingNode headingMapping && IsHeading(headingMapping))
+      {
+        NavigationItem heading = ParseHeading(headingMapping);
+        if (navigation.Any(sibling => sibling.Heading == heading.Heading))
+        {
+          throw new InvalidDataException($"Navigation repeats heading '{heading.Heading}'");
+        }
+        navigation.Add(heading);
+        continue;
+      }
       if (node is not YamlMappingNode mapping || mapping.Children.Count != 1)
       {
         throw new InvalidDataException(
-          "Each navigation item must be a view id, one view id with nested children, or a book entry");
+          "Each navigation item must be a view id, one view id with nested children, a heading with children, " +
+          "or a book entry");
       }
       KeyValuePair<YamlNode, YamlNode> entry = mapping.Children.Single();
       if (entry.Key is not YamlScalarNode key || key.Value is null)
@@ -287,6 +298,31 @@ public sealed class BookStructure
       navigation.Add(new NavigationItem { View = key.Value, Children = ParseNavigation(children) });
     }
     return navigation;
+  }
+
+  // `- heading: [children]` stays a view whose id is "heading"; a heading always names itself with a scalar.
+  private static bool IsHeading(YamlMappingNode mapping)
+  {
+    if (!mapping.Children.TryGetValue(new YamlScalarNode("heading"), out YamlNode? name) || name is not YamlScalarNode)
+    {
+      return false;
+    }
+    return mapping.Children.Keys.All(key => key is YamlScalarNode { Value: "heading" or "children" });
+  }
+
+  private static NavigationItem ParseHeading(YamlMappingNode mapping)
+  {
+    string name = ((YamlScalarNode)mapping.Children[new YamlScalarNode("heading")]).Value ?? "";
+    if (name.Trim().Length == 0)
+    {
+      throw new InvalidDataException("A navigation heading must have a name");
+    }
+    if (!mapping.Children.TryGetValue(new YamlScalarNode("children"), out YamlNode? childrenNode) ||
+      childrenNode is not YamlSequenceNode children || children.Children.Count == 0)
+    {
+      throw new InvalidDataException($"Navigation heading '{name}' must list children");
+    }
+    return new NavigationItem { Heading = name, Children = ParseNavigation(children) };
   }
 
   private static List<BookInclusion> ParseBooks(YamlSequenceNode sequence)

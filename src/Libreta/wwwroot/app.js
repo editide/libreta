@@ -369,18 +369,49 @@ function renderNavigation() {
   container.innerHTML = '';
   renderTreeChildren(container, viewTree(catalog?.views ?? []));
   navigation.scrollTop = scrollTop;
+  updateExpandAllButton();
+}
+
+// A heading sits before the id segment at its depth and stands in for the folders beneath it, so only parent views
+// and the folders of an included book still nest there. A step's part keys its node: # keeps a heading apart from folders, and a full id prefix keeps
+// same-named views from different folders apart.
+function treeSteps(view, viewIds) {
+  const segments = view.id.split('/');
+  const bookDepth = view.book ? view.book.split('/').length : 0;
+  const steps = [];
+  let headed = false;
+  segments.forEach((segment, depth) => {
+    for (const heading of view.headings ?? []) {
+      if (heading.depth !== depth) continue;
+      steps.push({ part: `#${heading.name}`, heading: heading.name });
+      headed = true;
+    }
+    const prefix = segments.slice(0, depth + 1).join('/');
+    if (!headed || depth < bookDepth) steps.push({ part: segment, segment });
+    else if (prefix === view.id || viewIds.has(prefix)) steps.push({ part: prefix, segment });
+  });
+  return steps;
+}
+
+function treeKeys(view, viewIds) {
+  const keys = [];
+  for (const step of treeSteps(view, viewIds)) {
+    keys.push(keys.length ? `${keys[keys.length - 1]}/${step.part}` : step.part);
+  }
+  return keys;
 }
 
 function viewTree(views) {
   const root = { children: new Map(), view: null, key: '' };
+  const viewIds = new Set(views.map((view) => view.id));
   for (const view of views) {
     let node = root;
-    for (const segment of view.id.split('/')) {
-      const key = node.key ? `${node.key}/${segment}` : segment;
-      if (!node.children.has(segment)) {
-        node.children.set(segment, { children: new Map(), view: null, segment, key });
+    for (const step of treeSteps(view, viewIds)) {
+      const key = node.key ? `${node.key}/${step.part}` : step.part;
+      if (!node.children.has(step.part)) {
+        node.children.set(step.part, { children: new Map(), view: null, ...step, key });
       }
-      node = node.children.get(segment);
+      node = node.children.get(step.part);
     }
     node.view = view;
   }
@@ -401,28 +432,28 @@ function renderTreeChildren(container, node) {
     item.setAttribute('role', 'none');
     const row = document.createElement('div');
     row.className = 'tree-entry';
-    const title = child.view?.title ?? labelFor(child.segment);
+    const title = child.view?.title ?? child.heading ?? labelFor(child.segment);
+    const entry = document.createElement('button');
+    entry.type = 'button';
+    entry.textContent = title;
+    entry.title = title;
+    entry.dataset.branch = child.key;
+    entry.setAttribute('role', 'treeitem');
+    entry.tabIndex = -1;
     if (child.view) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'tree-view';
-      button.textContent = child.view.title;
-      button.title = child.view.title;
-      button.dataset.view = child.view.id;
-      button.setAttribute('role', 'treeitem');
+      entry.className = 'tree-view';
+      entry.dataset.view = child.view.id;
       const active = child.view.id === activeView;
-      button.classList.toggle('active', active);
-      if (active) button.setAttribute('aria-current', 'page');
-      button.setAttribute('aria-selected', String(active));
-      button.tabIndex = active ? 0 : -1;
-      button.addEventListener('click', () => selectNavigationView(button));
-      row.appendChild(button);
+      entry.classList.toggle('active', active);
+      if (active) entry.setAttribute('aria-current', 'page');
+      entry.setAttribute('aria-selected', String(active));
+      if (active) entry.tabIndex = 0;
+      entry.addEventListener('click', () => selectNavigationView(entry));
     } else {
-      const label = document.createElement('div');
-      label.className = 'tree-label';
-      label.textContent = title;
-      row.appendChild(label);
+      entry.className = 'tree-label';
+      entry.addEventListener('click', () => openBranch(child.key));
     }
+    row.appendChild(entry);
     // A folder without a view starts open: its label cannot be clicked open.
     const expanded = branchStates.get(child.key) ?? !child.view;
     if (child.children.size) {
@@ -433,7 +464,7 @@ function renderTreeChildren(container, node) {
       toggle.tabIndex = -1;
       toggle.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${title}`);
       toggle.setAttribute('aria-expanded', String(expanded));
-      row.querySelector('.tree-view')?.setAttribute('aria-expanded', String(expanded));
+      entry.setAttribute('aria-expanded', String(expanded));
       toggle.addEventListener('click', () => setBranchExpanded(child.key, !expanded));
       row.appendChild(toggle);
     }
@@ -444,13 +475,26 @@ function renderTreeChildren(container, node) {
   container.appendChild(list);
 }
 
+function branchKeys(node) {
+  const keys = node.key && node.children.size ? [node.key] : [];
+  for (const child of node.children.values()) keys.push(...branchKeys(child));
+  return keys;
+}
+
+// Unset states fall back to the defaults: a heading or folder starts open, a parent view closed.
+function anyBranchExpanded(node) {
+  for (const child of node.children.values()) {
+    if (child.children.size && (branchStates.get(child.key) ?? !child.view)) return true;
+  }
+  return false;
+}
+
 // Only ever expands, so the reader's own expansions survive navigation.
 function expandAncestors(id) {
   if (!id) return;
-  const segments = id.split('/');
-  for (let depth = 1; depth <= segments.length; depth += 1) {
-    branchStates.set(segments.slice(0, depth).join('/'), true);
-  }
+  const views = catalog?.views ?? [];
+  const view = views.find((candidate) => candidate.id === id) ?? { id };
+  for (const key of treeKeys(view, new Set(views.map((candidate) => candidate.id)))) branchStates.set(key, true);
 }
 
 // A line no table shows has a view of its own, which the server builds on request and an export carries.
@@ -615,6 +659,7 @@ function render() {
   head.firstElementChild.appendChild(labelResizer);
   head.querySelectorAll('[data-column]').forEach((cell) => {
     const periodIndex = Number(cell.dataset.column);
+    cell.tabIndex = -1;
     cell.setAttribute('aria-label', `${columns[periodIndex].label} overview`);
     cell.addEventListener('pointerdown', (event) => beginCellRangePointer(event, COLUMN_AXIS, periodIndex));
     cell.addEventListener('click', () => {
@@ -655,6 +700,7 @@ function render() {
     tr.style.setProperty('--indent-level', row.indent ?? 0);
     tr.querySelectorAll('[data-column]').forEach((cell) => {
       const periodIndex = Number(cell.dataset.column);
+      cell.tabIndex = -1;
       const isRowLabel = periodIndex === -1;
       if (!isRowLabel) cellNodes.set(coordinateKey(row.cells[periodIndex].line, row.cells[periodIndex].column), cell);
       cell.setAttribute('aria-label', isRowLabel
@@ -990,27 +1036,34 @@ function locate(line, column) {
 }
 
 function selectInGrid(nextSelection, ranges) {
+  const checks = el('checks');
+  const openChecks = checks.querySelector(':scope > details[open]');
+  if (openChecks) openChecks.open = false;
+  checks.classList.remove('expanded');
   checksExpanded = false;
-  sensitivitySelection = null;
+  if (sensitivitySelection) {
+    sensitivitySelection = null;
+    renderSensitivities();
+  }
   selection = nextSelection;
   cellRanges = ranges;
 }
 
 function selectRow(index, focus = false) {
   selectInGrid({ index, periodIndex: null }, []);
-  render();
+  refreshGridSelection();
   if (focus) focusGridCell(index, null);
 }
 
 function selectColumn(periodIndex, focus = false) {
   selectInGrid({ index: COLUMN_AXIS, periodIndex }, []);
-  render();
+  refreshGridSelection();
   if (focus) focusGridCell(COLUMN_AXIS, periodIndex);
 }
 
 function inspectCell(index, periodIndex) {
   selectInGrid({ index, periodIndex }, [{ anchor: { index, periodIndex }, active: { index, periodIndex } }]);
-  render();
+  refreshGridSelection();
   focusGridCell(index, periodIndex);
 }
 
@@ -1101,7 +1154,7 @@ function syncGridSelection() {
       '.range-top, .range-right, .range-bottom, .range-left')
       .forEach((node) => node.classList.remove('selected', 'cell-selected', 'selected-cell', 'selected-column',
         'range-selected', 'range-top', 'range-right', 'range-bottom', 'range-left'));
-    section.querySelectorAll('[data-column]').forEach((cell) => {
+    section.querySelectorAll('[data-column][tabindex="0"], [aria-selected]').forEach((cell) => {
       cell.tabIndex = -1;
       cell.removeAttribute('aria-selected');
     });
@@ -1179,7 +1232,7 @@ function extendCellRange(index, periodIndex, focus = false) {
     : validCellCoordinate(selection) ? selection : { index, periodIndex };
   selectInGrid(selectionFor({ index, periodIndex }),
     [...cellRanges.slice(0, -1), { anchor: { ...anchor }, active: { index, periodIndex } }]);
-  render();
+  refreshGridSelection();
   if (focus) focusGridCell(index, periodIndex);
 }
 
@@ -1295,6 +1348,10 @@ function leaveInspector() {
 function clearSelection() {
   selection = null;
   cellRanges = [];
+  refreshGridSelection();
+}
+
+function refreshGridSelection() {
   syncGridSelection();
   renderPanel();
   highlightTableCalculation();
@@ -1358,7 +1415,7 @@ function moveSelection(index, direction, edge = false) {
   }
   const target = { index: next, periodIndex };
   selectInGrid(target, periodIndex === null ? [] : [{ anchor: { ...target }, active: { ...target } }]);
-  render();
+  refreshGridSelection();
   focusGridCell();
 }
 
@@ -2455,16 +2512,21 @@ function toggleNavigation() {
 
 function focusNavigation() {
   if (!navigationVisible) setNavigationVisible(true);
-  const active = el('view-tree').querySelector('button.active');
-  focusNavigationView((active ?? el('view-tree').querySelector('.tree-view'))?.dataset.view);
+  const tree = el('view-tree');
+  focusTreeItem((tree.querySelector('button.active') ?? tree.querySelector('[role="treeitem"]'))?.dataset.branch);
 }
 
 function focusNavigationView(id) {
   if (!id) return;
-  const button = el('view-tree').querySelector(`.tree-view[data-view="${CSS.escape(id)}"]`);
-  if (!button) return;
-  button.focus({ preventScroll: true });
-  button.scrollIntoView({ block: 'nearest' });
+  focusTreeItem(el('view-tree').querySelector(`.tree-view[data-view="${CSS.escape(id)}"]`)?.dataset.branch);
+}
+
+function focusTreeItem(key) {
+  if (!key) return;
+  const item = el('view-tree').querySelector(`[role="treeitem"][data-branch="${CSS.escape(key)}"]`);
+  if (!item) return;
+  item.focus({ preventScroll: true });
+  item.scrollIntoView({ block: 'nearest' });
 }
 
 async function selectNavigationView(button) {
@@ -2481,7 +2543,60 @@ async function selectNavigationView(button) {
 function setBranchExpanded(key, expanded) {
   branchStates.set(key, expanded);
   renderNavigation();
-  focusNavigationView(key);
+  focusTreeItem(key);
+}
+
+// A heading has nothing to show itself, so opening it walks down through any nested headings to the first view.
+async function openBranch(key) {
+  let item = el('view-tree').querySelector(`[role="treeitem"][data-branch="${CSS.escape(key)}"]`);
+  while (item && !item.dataset.view) {
+    if (item.getAttribute('aria-expanded') === 'false') setBranchExpanded(item.dataset.branch, true);
+    const child = firstChildItem(item.dataset.branch);
+    if (!child) break;
+    item = child;
+  }
+  await enterTreeItem(item);
+}
+
+async function enterTreeItem(item) {
+  if (!item) return;
+  if (item.dataset.view) await selectNavigationView(item);
+  else focusTreeItem(item.dataset.branch);
+}
+
+function firstChildItem(key) {
+  const entry = el('view-tree').querySelector(`[role="treeitem"][data-branch="${CSS.escape(key)}"]`);
+  return entry?.closest('li')?.querySelector(':scope > ul [role="treeitem"]') ?? null;
+}
+
+function setAllBranchesExpanded(expanded) {
+  const tree = viewTree(catalog?.views ?? []);
+  const focused = document.activeElement?.closest?.('#view-tree') ? document.activeElement.dataset.branch : null;
+  for (const key of branchKeys(tree)) branchStates.set(key, expanded);
+  renderNavigation();
+  if (focused === null || focused === undefined) return;
+  // Collapsing can hide the focused entry, so focus falls back to its nearest ancestor still shown.
+  const parts = focused.split('/');
+  for (let length = parts.length; length > 0; length--) {
+    const key = parts.slice(0, length).join('/');
+    if (el('view-tree').querySelector(`[role="treeitem"][data-branch="${CSS.escape(key)}"]`)) {
+      focusTreeItem(key);
+      return;
+    }
+  }
+}
+
+function toggleAllBranches() {
+  setAllBranchesExpanded(!anyBranchExpanded(viewTree(catalog?.views ?? [])));
+}
+
+function updateExpandAllButton() {
+  const expanded = anyBranchExpanded(viewTree(catalog?.views ?? []));
+  const button = el('expand-all');
+  const label = expanded ? 'Collapse all navigation groups' : 'Expand all navigation groups';
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.classList.toggle('expanded', expanded);
 }
 
 function focusTable() {
@@ -2502,12 +2617,14 @@ function restoreGridFocusAfterClick(event) {
   focusGridCell();
 }
 
-function cycleView(direction) {
+async function cycleView(direction) {
   const ids = treeOrder(viewTree(catalog?.views ?? []));
   const current = ids.indexOf(activeView);
   if (current < 0 || ids.length < 2) return;
   const next = (current + direction + ids.length) % ids.length;
-  openView(ids[next]).then(focusTable);
+  await openView(ids[next]);
+  if (navigationVisible) el('view-tree').querySelector('button.active')?.scrollIntoView({ block: 'nearest' });
+  focusTable();
 }
 
 function openShortcuts() {
@@ -2772,42 +2889,47 @@ window.addEventListener('popstate', async (event) => {
 window.addEventListener('pagehide', persistHistoryStates);
 
 el('view-tree').addEventListener('keydown', (event) => {
-  if (event.altKey) return;
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
   if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', 'Escape'].includes(event.key)) return;
-  if (event.key === 'Escape' || event.key === 'Enter') {
-    event.preventDefault();
+  const items = Array.from(el('view-tree').querySelectorAll('[role="treeitem"]'));
+  const current = items.indexOf(document.activeElement);
+  if (current < 0) return;
+  event.preventDefault();
+  const item = items[current];
+  if (event.key === 'Escape' || event.key === 'Enter' && item.dataset.view) {
     focusTable();
     return;
   }
-  const buttons = Array.from(el('view-tree').querySelectorAll('.tree-view'));
-  const current = buttons.indexOf(document.activeElement);
-  if (current < 0) return;
-  event.preventDefault();
-  const button = buttons[current];
+  if (event.key === 'Enter') {
+    openBranch(item.dataset.branch);
+    return;
+  }
+  if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    setAllBranchesExpanded(event.key === 'ArrowRight');
+    return;
+  }
+  const expanded = item.getAttribute('aria-expanded');
   if (event.key === 'ArrowRight') {
-    if (button.getAttribute('aria-expanded') === 'false') {
-      setBranchExpanded(button.dataset.view, true);
-      return;
-    }
-    if (button.getAttribute('aria-expanded') === 'true') {
-      selectNavigationView(buttons[current + 1]);
-    }
+    if (expanded === 'false') setBranchExpanded(item.dataset.branch, true);
+    else if (expanded === 'true') enterTreeItem(firstChildItem(item.dataset.branch));
     return;
   }
   if (event.key === 'ArrowLeft') {
-    if (button.getAttribute('aria-expanded') === 'true') {
-      setBranchExpanded(button.dataset.view, false);
+    if (expanded === 'true') {
+      setBranchExpanded(item.dataset.branch, false);
       return;
     }
-    const parent = button.closest('ul')?.parentElement?.querySelector(':scope > .tree-entry > .tree-view');
-    if (parent) selectNavigationView(parent);
+    const parent = item.closest('ul')?.parentElement?.querySelector(':scope > .tree-entry > [role="treeitem"]');
+    if (parent) enterTreeItem(parent);
     return;
   }
   const next = event.key === 'Home' ? 0
-    : event.key === 'End' ? buttons.length - 1
-      : Math.max(0, Math.min(buttons.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)));
-  if (next !== current) selectNavigationView(buttons[next]);
+    : event.key === 'End' ? items.length - 1
+      : Math.max(0, Math.min(items.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)));
+  if (next !== current) enterTreeItem(items[next]);
 });
+
+el('expand-all').addEventListener('click', toggleAllBranches);
 
 // An exported page has no server to build an export.
 el('export-button').hidden = Boolean(snapshot);

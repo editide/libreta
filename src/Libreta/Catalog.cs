@@ -1,6 +1,12 @@
 namespace Libreta;
 
-public record ViewCatalogEntry(string Id, string Title);
+/// <summary>A view in navigation order, with the headings enclosing it in the sidebar, outermost first, and the id
+/// prefix of the included book it belongs to, which a heading never hides.</summary>
+public record ViewCatalogEntry(string Id, string Title, IReadOnlyList<CatalogHeading> Headings, string? Book = null);
+
+/// <summary>A sidebar heading, placed before the view id's segment at Depth so it can sit inside a folder or parent
+/// view.</summary>
+public record CatalogHeading(string Name, int Depth);
 
 public record ViewCatalog(
   string Name,
@@ -23,14 +29,16 @@ public static class CatalogLoader
       {
         (string localId, string id) = BookStructure.ViewId(definition, Path.GetDirectoryName(path)!);
         string title = book.Presentations[id].Title;
-        discovered.Add(localId, new ViewCatalogEntry(id, title.Length > 0 ? title : Label(localId.Split('/')[^1])));
+        discovered.Add(localId, new ViewCatalogEntry(id, title.Length > 0 ? title : Label(localId.Split('/')[^1]),
+          Array.Empty<CatalogHeading>(), definition.ViewPrefix.Length == 0 ? null : definition.ViewPrefix));
       }
       viewsByBook.Add(definition, discovered);
       ValidateLocalNavigation(definition, discovered);
     }
 
     var views = new List<ViewCatalogEntry>();
-    AddNavigation(structure.Definition, structure.Definition.File.Navigation, viewsByBook, views);
+    AddNavigation(structure.Definition, structure.Definition.File.Navigation, viewsByBook, views,
+      Array.Empty<CatalogHeading>(), Depth(structure.Definition.ViewPrefix));
     return new ViewCatalog(
       structure.Definition.File.Name,
       structure.Definition.File.ShortName,
@@ -61,6 +69,11 @@ public static class CatalogLoader
   {
     foreach (NavigationItem item in items)
     {
+      if (item.Heading.Length > 0)
+      {
+        ValidateLocalItems(definition, item.Children, parent, discovered, included);
+        continue;
+      }
       if (item.Book.Length > 0)
       {
         if (!definition.Children.Any(child => child.Id == item.Book))
@@ -89,19 +102,33 @@ public static class CatalogLoader
     BookDefinition definition,
     List<NavigationItem> items,
     Dictionary<BookDefinition, Dictionary<string, ViewCatalogEntry>> viewsByBook,
-    List<ViewCatalogEntry> views)
+    List<ViewCatalogEntry> views,
+    IReadOnlyList<CatalogHeading> headings,
+    int depth)
   {
     foreach (NavigationItem item in items)
     {
+      if (item.Heading.Length > 0)
+      {
+        CatalogHeading[] nested = headings.Append(new CatalogHeading(item.Heading, depth)).ToArray();
+        AddNavigation(definition, item.Children, viewsByBook, views, nested, depth);
+        continue;
+      }
       if (item.Book.Length > 0)
       {
         BookDefinition child = definition.Children.Single(candidate => candidate.Id == item.Book);
-        AddNavigation(child, child.File.Navigation, viewsByBook, views);
+        AddNavigation(child, child.File.Navigation, viewsByBook, views, headings, Depth(child.ViewPrefix));
         continue;
       }
-      views.Add(viewsByBook[definition][item.View]);
-      AddNavigation(definition, item.Children, viewsByBook, views);
+      ViewCatalogEntry view = viewsByBook[definition][item.View] with { Headings = headings };
+      views.Add(view);
+      AddNavigation(definition, item.Children, viewsByBook, views, headings, Depth(view.Id));
     }
+  }
+
+  private static int Depth(string path)
+  {
+    return path.Length == 0 ? 0 : path.Split('/').Length;
   }
 
   private static string Label(string segment)

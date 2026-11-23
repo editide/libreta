@@ -85,3 +85,25 @@ test('alt with an arrow is left to the browser for back and forward', () => {
   assert.deepEqual(calls, []);
   assert.equal(prevented, false);
 });
+
+test('arrow keys move focus and refresh the inspector without rebuilding the table', () => {
+  const focused = [];
+  let panelUpdates = 0;
+  const context = {
+    COLUMN_AXIS: -1, payload: { columns: [{}, {}, {}], rows }, selection: { index: 1, periodIndex: 0 },
+    cellRanges: [], sensitivitySelection: null, checksExpanded: false,
+    render: () => assert.fail('moving focus rebuilt the table'),
+    el: () => ({ querySelector: () => null, classList: { remove() {} } }),
+    syncGridSelection() {}, highlightTableCalculation() {},
+    renderPanel() { panelUpdates++; },
+    focusGridCell() { focused.push([context.selection.index, context.selection.periodIndex]); }
+  };
+  for (const name of ['handleGridKey', 'extendCellRangeByKey', 'movePeriod', 'moveSelection', 'verticalCellTarget',
+    'inspectCell', 'selectInGrid', 'refreshGridSelection']) vm.runInNewContext(source(name), context);
+  for (const key of ['ArrowRight', 'ArrowDown']) {
+    const { index, periodIndex } = context.selection;
+    context.handleGridKey({ key, preventDefault() {} }, index, periodIndex);
+  }
+  assert.deepEqual(focused, [[1, 1], [2, 1]]);
+  assert.equal(panelUpdates, 2);
+});
