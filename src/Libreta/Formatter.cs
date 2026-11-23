@@ -11,6 +11,8 @@ public class Formatter
 
   private static readonly int EpochDayNumber = new DateOnly(1899, 12, 30).DayNumber;
 
+  private static readonly Lazy<FormatsOverride> BuiltIn = new Lazy<FormatsOverride>(ReadBuiltIn);
+
   private readonly FormatsFile formats;
 
   public Formatter(FormatsFile formats)
@@ -123,11 +125,17 @@ public class Formatter
   public static FormatsFile Load(string viewFolder, string bookRoot, IDeserializer deserializer,
     IBookFiles? source = null)
   {
+    return Load(LocateAll(viewFolder, bookRoot, source), deserializer, source);
+  }
+
+  /// <summary>Formats merged from files nearest first, as <see cref="LocateAll"/> lists them.</summary>
+  public static FormatsFile Load(IReadOnlyList<string> paths, IDeserializer deserializer, IBookFiles? source = null)
+  {
     source ??= DiskFiles.Instance;
     var formats = new FormatsFile();
     (FormatSpecOverride builtInDefaults, Dictionary<string, FormatSpecOverride> builtIns) =
-      Merge(formats, new[] { BuiltIn(deserializer) });
-    IEnumerable<FormatsOverride> files = Enumerable.Reverse(LocateAll(viewFolder, bookRoot, source))
+      Merge(formats, new[] { BuiltIn.Value });
+    IEnumerable<FormatsOverride> files = paths.Reverse()
       .Select(path => YamlFile.Load<FormatsOverride>(path, deserializer, source));
     (FormatSpecOverride defaults, Dictionary<string, FormatSpecOverride> formatOverrides) = Merge(formats, files);
 
@@ -212,12 +220,12 @@ public class Formatter
   }
 
   /// <summary>The formats.yaml beside this file, compiled in so a book with no formats.yaml still renders.</summary>
-  private static FormatsOverride BuiltIn(IDeserializer deserializer)
+  private static FormatsOverride ReadBuiltIn()
   {
     using Stream stream = typeof(Formatter).Assembly.GetManifestResourceStream("Libreta.formats.yaml")
       ?? throw new InvalidOperationException("The built-in formats.yaml is missing.");
     using var reader = new StreamReader(stream);
-    return deserializer.Deserialize<FormatsOverride>(reader.ReadToEnd());
+    return YamlFile.Deserializer().Deserialize<FormatsOverride>(reader.ReadToEnd());
   }
 
   private static string InheritanceRoot(string bookRoot, IBookFiles source)

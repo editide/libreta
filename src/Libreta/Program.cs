@@ -202,12 +202,15 @@ if (!watched && registry.Find(root) is ServerInstance existing)
   return 0;
 }
 
+string assets = InterfaceFolder();
+using var store = new BookStore(root, assets);
 string query = "";
 if (options.Cell is (string cellLine, string cellColumn))
 {
   try
   {
-    query = CellLink.Query(root, cellLine, cellColumn);
+    Book book = store.Book ?? throw new InvalidDataException(store.Catalog.Error ?? "the book has not loaded");
+    query = CellLink.Resolve(book, cellLine, cellColumn).Query;
   }
   catch (Exception exception) when (exception is ArgumentException or InvalidDataException)
   {
@@ -215,9 +218,6 @@ if (options.Cell is (string cellLine, string cellColumn))
     return 1;
   }
 }
-
-string assets = InterfaceFolder();
-using var store = new BookStore(root, assets);
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
   ContentRootPath = AppContext.BaseDirectory,
