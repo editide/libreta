@@ -935,14 +935,25 @@ function formatCheckDeltas(check) {
 }
 
 function formatCheckEquation(check) {
+  const text = check.expression?.text ?? check.formula;
   const suffix = ` - ${check.name}`;
-  const equation = check.formula.endsWith(suffix)
-    ? `${check.formula.slice(0, -suffix.length)} = ${check.name}`
-    : `${check.formula} = 0`;
-  const labels = new Map([...(payload.rows ?? []), ...(payload.columns ?? [])]
-    .map((entry) => [entry.name, entry.label]));
-  return equation
-    .replace(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g, (name) => labels.get(name) ?? name.replaceAll('_', ' '))
+  const equation = text.endsWith(suffix)
+    ? `${text.slice(0, -suffix.length)} = ${check.name}`
+    : `${text} = 0`;
+  const references = check.expression?.references ?? [];
+  let rendered = '';
+  let end = 0;
+  for (const reference of references) {
+    rendered += formatOperators(equation.slice(end, reference.start));
+    end = reference.start + reference.length;
+    rendered += referenceLabel(equation.slice(reference.start, end), reference);
+  }
+  rendered += formatOperators(equation.slice(end));
+  return rendered;
+}
+
+function formatOperators(text) {
+  return text
     .replaceAll(' - ', ' − ')
     .replaceAll(' * ', ' × ')
     .replaceAll(' / ', ' ÷ ');
@@ -2002,7 +2013,7 @@ function formulaBoxClass() {
 }
 
 function exactDiffersFromDisplay(cell) {
-  return cell.exact != null && !displayMatchesExact(cell.display, cell.exact, cell.units);
+  return Boolean(cell?.rounded && cell.exact != null);
 }
 
 function renderFormula(formula, expand = false) {
@@ -2247,18 +2258,6 @@ function highlightTableCalculation() {
     cell.classList.add('calculation-source');
     cell.dataset.calcColor = color;
   }
-}
-
-function displayMatchesExact(display, exact, units = '') {
-  if (display === exact) return true;
-  const { scale, prefix, suffix } = unitFormat(units);
-  let text = display.replaceAll(',', '');
-  const parenthesized = text.startsWith('(') && text.endsWith(')');
-  const negative = parenthesized || text.startsWith('-');
-  if (negative) text = parenthesized ? text.slice(1, -1) : text.slice(1);
-  if (prefix && text.startsWith(prefix)) text = text.slice(prefix.length);
-  if (suffix && text.endsWith(suffix)) text = text.slice(0, -suffix.length);
-  return Number(negative ? `-${text}` : text) === stableNumber(Number(exact) * scale);
 }
 
 function highlightInput(source, active) {

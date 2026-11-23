@@ -99,6 +99,35 @@ public class Formatter
     return spec.Negative == "parentheses" ? $"({text})" : $"-{text}";
   }
 
+  /// <summary>Whether formatting this value loses precision compared to <see cref="Exact(string?, double)"/>.</summary>
+  public bool IsRounded(string? units, double amount)
+  {
+    FormatSpec spec = Spec(units);
+    if (spec.Text)
+    {
+      return false;
+    }
+    if (spec.Date is not null)
+    {
+      return FormatDate(spec.Date, amount) != FormatDate(IsoDate, amount);
+    }
+    if (amount == 0 || !double.IsFinite(amount))
+    {
+      return false;
+    }
+    double scaled = amount * spec.Scale;
+    if (!double.IsFinite(scaled) || Math.Abs(amount) > 1e25 || Math.Abs(scaled) > 1e25)
+    {
+      return false;
+    }
+    decimal exact = (decimal)amount * (decimal)spec.Scale;
+    if (exact == 0m)
+    {
+      return true;
+    }
+    return Math.Round(exact, spec.Decimals, MidpointRounding.AwayFromZero) != exact;
+  }
+
   /// <summary>A date's exact value is its ISO form, unambiguous whatever pattern the display uses.</summary>
   public string Exact(string? units, double amount)
   {

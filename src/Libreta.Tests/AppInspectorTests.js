@@ -100,10 +100,24 @@ test('the inspector lists what reads a cell, opening one no table shows on a vie
   assert.match(html, /<button type="button" class="dep dependent-hidden" data-name="a\.helper" data-column-key="2023" data-source-view="line:a\.helper"/);
 });
 
-test('a date cell whose exact value is its display reads as matching', () => {
-  const stableNumberText = app.match(/function stableNumber\([\s\S]*?\n\}/)?.[0];
-  const displayMatchesExactText = app.match(/function displayMatchesExact\([\s\S]*?\n\}/)?.[0];
-  const displayMatchesExact = vm.runInNewContext(`${stableNumberText}\n(${displayMatchesExactText})`);
+test('check equations relabel qualified references from the server formula payload', () => {
+  const formatOperatorsText = app.match(/function formatOperators\([\s\S]*?\n\}/)?.[0];
+  const formatCheckEquationText = app.match(/function formatCheckEquation\([\s\S]*?\n\}/)?.[0];
+  const formatCheckEquation = vm.runInNewContext(
+    `${referenceLabelText}\n${formatOperatorsText}\n${formatCheckEquationText}\nformatCheckEquation`);
 
-  assert.equal(displayMatchesExact('2026-06-30', '2026-06-30', 'date'), true);
+  const text = formatCheckEquation({
+    name: 'total',
+    formula: 'historical.revenue - cost - total',
+    expression: {
+      text: 'historical.revenue - cost - total',
+      references: [
+        { start: 0, length: 18, line: 'historical.revenue', label: 'Revenue' },
+        { start: 21, length: 4, line: 'cost', label: 'Cost - Direct' },
+        { start: 28, length: 5, line: 'total', label: 'Gross Profit' }
+      ]
+    }
+  });
+
+  assert.equal(text, 'Revenue − Cost - Direct = Gross Profit');
 });

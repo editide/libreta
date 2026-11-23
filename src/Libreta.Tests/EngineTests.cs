@@ -1005,6 +1005,41 @@ public class EngineTests
   }
 
   [Fact]
+  public void CheckPayloadsCarryResolvedFormulaReferences()
+  {
+    // Arrange
+    using BookFixture fixture = new BookFixture();
+    string folder = Path.Combine(fixture.Root, "summary");
+    Directory.CreateDirectory(folder);
+    File.WriteAllText(Path.Combine(folder, "checks.yaml"), """
+      checks:
+        revenue_match:
+          formula: analysis.revenue - 100
+      """);
+    File.WriteAllText(Path.Combine(folder, "view.yaml"), """
+      title: Summary
+      columns: [2024]
+      rows:
+        - line: analysis.revenue
+      """);
+    Book book = Book.Load(fixture.Root);
+    View view = View.Load(book, folder);
+
+    // Act
+    ViewPayload payload = PayloadBuilder.Build(view, new Engine(view), 1);
+
+    // Assert
+    CheckPayload check = payload.Checks.Single();
+    check.Expression.ShouldNotBeNull();
+    check.Expression!.Text.ShouldBe("analysis.revenue - 100");
+    FormulaReferencePayload reference = check.Expression.References.Single();
+    reference.Line.ShouldBe("analysis.revenue");
+    reference.Label.ShouldBe("Revenue");
+    reference.Start.ShouldBe(0);
+    reference.Length.ShouldBe("analysis.revenue".Length);
+  }
+
+  [Fact]
   public void CheckNotesReachTheirPayload()
   {
     // Arrange

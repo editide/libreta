@@ -74,6 +74,8 @@ public record CellPayload(
 {
   public bool Text { get; init; }
 
+  public bool Rounded { get; init; }
+
   public List<DependentPayload> Dependents { get; init; } = new List<DependentPayload>();
 }
 
@@ -127,7 +129,8 @@ public record CheckPayload(
   List<string> Periods,
   List<string> Deltas,
   bool Passed,
-  string? Note);
+  string? Note,
+  FormulaPayload? Expression = null);
 
 public record SensitivityInputPayload(
   string Label,
@@ -235,7 +238,7 @@ public static class PayloadBuilder
         .Where(column => !view.Book.ColumnFormulas.ContainsKey(column))
         .ToList(),
       Rows = rows,
-      Checks = BuildChecks(view, engine),
+      Checks = BuildChecks(view, engine, null, presentation),
       Sensitivities = BuildSensitivities(view),
       Calculations = presentation.Calculations,
       Formulas = presentation.Formulas,
@@ -330,6 +333,7 @@ public static class PayloadBuilder
       Paragraphs(new[] { cell.Note, lineNote }.OfType<string>().ToList()))
     {
       Text = cell.Text is not null,
+      Rounded = cell.Text is null && cell.Value is double value && view.Formatter.IsRounded(cell.Units, value),
       Dependents = Dependents(view, engine, readers.GetValueOrDefault(coordinate), presentation)
     };
   }
@@ -571,18 +575,32 @@ public static class PayloadBuilder
 
   public static List<CheckPayload> BuildChecks(View view, Engine engine, IEnumerable<Check>? requestedChecks = null)
   {
+    return BuildChecks(view, engine, requestedChecks, null);
+  }
+
+  private static List<CheckPayload> BuildChecks(
+    View view,
+    Engine engine,
+    IEnumerable<Check>? requestedChecks,
+    Presentation? presentation)
+  {
     List<Check> checks = (requestedChecks ?? view.Checks).ToList();
     var payloads = new List<CheckPayload>();
     foreach (Check check in checks)
     {
       List<CheckResult> results = engine.RunChecks(new[] { check });
+      FormulaPayload? expression = presentation is null
+        ? null
+        : Formula(view, engine, check.Text, check.Expression, check.Scope, null, null, presentation,
+          new HashSet<string>());
       payloads.Add(new CheckPayload(
         check.Name,
         check.Text,
         results.Select(result => result.Period).ToList(),
         results.Select(result => result.Delta is null ? "unresolved" : Formatter.Exact(result.Delta.Value)).ToList(),
         results.Count > 0 && results.All(result => result.Passed),
-        check.Note));
+        check.Note,
+        expression));
     }
     return payloads;
   }
@@ -764,7 +782,7 @@ public static class PayloadBuilder
     string? text,
     Expr? expression,
     string scope,
-    string line,
+    string? line,
     string? column,
     Presentation presentation,
     HashSet<string> path)

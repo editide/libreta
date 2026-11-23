@@ -215,6 +215,42 @@ public class FormatterTests
     double.Parse(exact, CultureInfo.InvariantCulture).ShouldBe(amount);
   }
 
+  [Fact]
+  public void IsRoundedDetectsPrecisionLossAcrossFormats()
+  {
+    // Arrange
+    using var folder = new TempFolder();
+    folder.Write("book/formats.yaml", """
+      formats:
+        basis_points:
+          scale: 10000
+          decimals: 0
+          prefix: "~"
+          suffix: " bp"
+        percent:
+          scale: 100
+          decimals: 1
+          suffix: "%"
+        iso_date:
+          date: yyyy-MM-dd
+        short_date:
+          date: MMM d, yyyy
+        note:
+          text: true
+      """);
+    Formatter formatter = Load(folder, "book");
+
+    // Assert
+    formatter.IsRounded("basis_points", -0.0125).ShouldBeFalse();
+    formatter.IsRounded("basis_points", 0.01251).ShouldBeTrue();
+    formatter.IsRounded("percent", 0.14).ShouldBeFalse();
+    formatter.IsRounded("percent", 0.1415).ShouldBeTrue();
+    formatter.IsRounded("percent", 0).ShouldBeFalse();
+    formatter.IsRounded("iso_date", 46203).ShouldBeFalse();
+    formatter.IsRounded("short_date", 46203).ShouldBeTrue();
+    formatter.IsRounded("note", 0).ShouldBeFalse();
+  }
+
   private static Formatter Load(TempFolder folder, string book)
   {
     string view = folder.PathTo($"{book}/view");

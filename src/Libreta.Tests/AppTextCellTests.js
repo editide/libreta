@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const app = fs.readFileSync(path.join(__dirname, '..', 'Libreta', 'wwwroot', 'app.js'), 'utf8');
 const names = ['escapeHtml', 'columnStyle', 'tableCellHtml', 'valuesRowHtml', 'exactDiffersFromDisplay',
-  'displayMatchesExact', 'selectedRangeSummary'];
+  'selectedRangeSummary'];
 const source = names.map((name) => {
   const text = app.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`))?.[0];
   assert.ok(text, `app.js must define ${name}`);
