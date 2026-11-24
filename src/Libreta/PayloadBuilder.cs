@@ -429,13 +429,12 @@ public static class PayloadBuilder
     return payloads;
   }
 
-  public static CellDetailPayload BuildCell(View view, Engine engine, ResolvedTable table, int row, int column)
+  public static CellPayload BuildCell(View view, Engine engine, ResolvedTable table, int row, int column)
   {
     CellCoordinate coordinate = table.Coordinate(row, column)!.Value;
     var presentation = new Presentation(table.Coordinates(), true);
-    CellPayload cell = Cell(view, engine, table.LineEntry(row, column), coordinate, engine.Cell(coordinate),
+    return Cell(view, engine, table.LineEntry(row, column), coordinate, engine.Cell(coordinate),
       presentation, engine.PresentedReaders());
-    return new CellDetailPayload(cell, presentation.Formulas);
   }
 
   private static bool Contra(string? sign, Fact? fact)
@@ -458,7 +457,7 @@ public static class PayloadBuilder
     }
     string scope = cell.Scope ?? view.Scope;
     string? resolved = view.Book.ResolveSelf(reference.Name, scope, line);
-    string? resolvedScope = resolved is null ? null : ScopeOf(view, resolved);
+    string? resolvedScope = resolved is null ? null : view.Book.ScopeOf(resolved);
     bool linked = resolvedScope is not null && resolvedScope != scope;
     string? column = resolved is null
       ? null
@@ -517,7 +516,7 @@ public static class PayloadBuilder
     string referringScope,
     bool shown)
   {
-    string? scope = ScopeOf(view, line);
+    string? scope = view.Book.ScopeOf(line);
     if (scope is null)
     {
       return null;
@@ -538,13 +537,6 @@ public static class PayloadBuilder
   private static string Key(CellCoordinate coordinate)
   {
     return $"{coordinate.Line}\0{coordinate.Column}";
-  }
-
-  private static string? ScopeOf(View view, string name)
-  {
-    return view.Facts.TryGetValue(name, out Fact? fact)
-      ? fact.Scope
-      : view.Formulas.TryGetValue(name, out Formula? formula) ? formula.Scope : null;
   }
 
   public static string Display(View view, ResolvedCell cell, bool contra)
@@ -632,7 +624,7 @@ public static class PayloadBuilder
         view.LabelOf(reference.Line),
         LineKind(view, reference.Line),
         sourceView,
-        !shown && (sourceView is not null || ScopeOf(view, reference.Line) != scope),
+        !shown && (sourceView is not null || view.Book.ScopeOf(reference.Line) != scope),
         shown ? null : Expansion(view, engine, reference, presentation, path)));
     }
     return new FormulaPayload(text, references);
@@ -746,12 +738,17 @@ public static class PayloadBuilder
         break;
 
       case RefExpr reference:
-        string dependency = view.Book.ResolveSelf(reference.Name, scope, currentLine) ?? reference.Name;
+        CellCoordinate? coordinate = column is null
+          ? null
+          : view.Book.Coordinate(reference, column, scope, currentLine);
+        string dependency = coordinate?.Line
+          ?? view.Book.ResolveSelf(reference.Name, scope, currentLine)
+          ?? reference.Name;
         tokens.Add(ReferenceToken(
           view,
           engine,
           dependency,
-          view.Book.ReferenceColumn(reference.Column, column, scope, dependency),
+          coordinate?.Column ?? view.Book.ReferenceColumn(reference.Column, column, scope, dependency),
           scope,
           presentation,
           expansionPath));

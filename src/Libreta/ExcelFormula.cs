@@ -41,14 +41,14 @@ public sealed class ExcelFormula
   {
     return expression switch
     {
-      RefExpr reference => Coordinate(book, reference, column, scope, line) is CellCoordinate coordinate
+      RefExpr reference => book.Coordinate(reference, column, scope, line) is CellCoordinate coordinate
         ? new[] { coordinate }
         : Array.Empty<CellCoordinate>(),
       RangeExpr range => Coordinates(book, range, scope, line) ?? new List<CellCoordinate>(),
       PriorExpr prior => book.PriorPeriod(scope, column) is string priorColumn
         ? Reads(book, prior.Inner, priorColumn, scope, line)
         : Array.Empty<CellCoordinate>(),
-      _ => Children(expression).SelectMany(child => Reads(book, child, column, scope, line))
+      _ => Expr.Children(expression).SelectMany(child => Reads(book, child, column, scope, line))
     };
   }
 
@@ -70,7 +70,7 @@ public sealed class ExcelFormula
         return new Atom(number.Value.ToString("R", CultureInfo.InvariantCulture));
 
       case RefExpr reference:
-        return Coordinate(book, reference, column, scope, line) is CellCoordinate coordinate
+        return book.Coordinate(reference, column, scope, line) is CellCoordinate coordinate
           ? Reference(coordinate, sheet)
           : Unavailable;
 
@@ -184,16 +184,6 @@ public sealed class ExcelFormula
     return address.Sheet == sheet ? "" : $"'{address.Sheet.Replace("'", "''")}'!";
   }
 
-  private static CellCoordinate? Coordinate(Book book, RefExpr reference, string column, string scope, string line)
-  {
-    string? name = book.ResolveSelf(reference.Name, scope, line);
-    if (name is null)
-    {
-      return null;
-    }
-    return new CellCoordinate(name, book.ReferenceColumn(reference.Column, column, scope, name));
-  }
-
   private static List<CellCoordinate>? Coordinates(Book book, RangeExpr range, string scope, string line)
   {
     string? name = book.ResolveSelf(range.Name, scope, line);
@@ -202,18 +192,6 @@ public sealed class ExcelFormula
       : book.ColumnsInRange(name, range.StartColumn, range.EndColumn)
         .Select(rangeColumn => new CellCoordinate(name, rangeColumn))
         .ToList();
-  }
-
-  private static IEnumerable<Expr> Children(Expr expression)
-  {
-    return expression switch
-    {
-      UnaryExpr unary => new[] { unary.Operand },
-      BinaryExpr binary => new[] { binary.Left, binary.Right },
-      ComparisonExpr comparison => new[] { comparison.Left, comparison.Right },
-      FunctionExpr function => function.Arguments,
-      _ => Array.Empty<Expr>()
-    };
   }
 
   /// <summary>Stands in for a read the engine could not make, such as the period before the first. Only a branch the

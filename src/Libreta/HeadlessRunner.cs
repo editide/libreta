@@ -1,21 +1,22 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace Libreta;
 
 public static class HeadlessRunner
 {
-  // The default encoder escapes formula punctuation like + and ' for embedding in HTML, which a terminal never needs.
-  private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions(PayloadJson.Options)
+  public static int Run(string root, CommandLineOptions options, InstanceRegistry registry,
+    Func<string> interfaceFolder)
   {
-    WriteIndented = true,
-    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-  };
-
-  private static readonly JsonSerializerOptions ViewJsonOptions = new JsonSerializerOptions(PayloadJson.Options)
-  {
-    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-  };
+    return options.Command switch
+    {
+      HeadlessCommand.Url => RunUrl(root, registry),
+      HeadlessCommand.Export => RunExport(root, options.Output!, options.At, interfaceFolder),
+      HeadlessCommand.SetRegions => RunSetRegions(root, options.RegionsTable!, options.RegionsFile!),
+      HeadlessCommand.ShowRegions => RunShowRegions(root, options.RegionsTable!, options.Output!),
+      HeadlessCommand command => Run(root, command, options.Query, options.Json, options.Lines, options.At),
+      _ => throw new ArgumentOutOfRangeException(nameof(options), options.Command, "not a headless command")
+    };
+  }
 
   /// <param name="at">The revision to read the book as, rather than the working tree.</param>
   public static int Run(string root, HeadlessCommand command, ViewQuery? query, bool json,
@@ -33,12 +34,68 @@ public static class HeadlessRunner
     };
   }
 
+  private static int RunUrl(string root, InstanceRegistry registry)
+  {
+    ServerInstance? running = registry.Find(root);
+    if (running is null)
+    {
+      Console.Error.WriteLine($"no server is running {root}.");
+      return 1;
+    }
+    Console.WriteLine(running.Url);
+    return 0;
+  }
+
+  private static int RunExport(string root, string output, string? at, Func<string> interfaceFolder)
+  {
+    using GitFiles? commit = at is null ? null : GitFiles.Open(root, at);
+    if (Path.GetExtension(output).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+    {
+      // Built in memory so a book that fails to export leaves no half-written workbook behind.
+      using var workbook = new MemoryStream();
+      XlsxExport.Write(root, workbook, commit);
+      File.WriteAllBytes(output, workbook.ToArray());
+    }
+    else
+    {
+      File.WriteAllText(output, HtmlExport.Build(root, interfaceFolder(), source: commit));
+    }
+    Console.WriteLine($"  wrote {output} ({new FileInfo(output).Length / 1024} KB)");
+    return 0;
+  }
+
+  private static int RunSetRegions(string root, string table, string file)
+  {
+    SourceRegionResult result = SourceRegionWriter.Write(root, table, file);
+    Console.WriteLine($"  wrote {result.Regions} regions to {table}");
+    if (result.Unboxed.Count > 0)
+    {
+      Console.WriteLine($"  unboxed: {SourceRegionWriter.Summarize(result.Unboxed)}");
+    }
+    return 0;
+  }
+
+  private static int RunShowRegions(string root, string table, string output)
+  {
+    List<RegionImage> images = SourceRegionImages.Write(root, table, output);
+    int width = images.Select(image => image.Line.Length + image.Period.Length + 2).DefaultIfEmpty().Max();
+    int printedWidth = images.Select(image => image.Printed.Length).DefaultIfEmpty().Max();
+    foreach (RegionImage image in images)
+    {
+      string cell = $"{image.Line}[{image.Period}]";
+      Console.WriteLine(
+        $"  {cell.PadRight(width)}  {image.Printed.PadRight(printedWidth)}  {image.File ?? image.Problem}");
+    }
+    Console.WriteLine($"  {images.Count(image => image.File is not null)} regions written to {output}");
+    return images.Any(image => image.Problem is not null) ? 1 : 0;
+  }
+
   private static int RunList(Book book, bool json)
   {
     ViewCatalog catalog = CatalogLoader.Load(book, 1);
     if (json)
     {
-      Console.WriteLine(JsonSerializer.Serialize(catalog.Views, JsonOptions));
+      Console.WriteLine(JsonSerializer.Serialize(catalog.Views, PayloadJson.IndentedTerminalOptions));
       return 0;
     }
     foreach (ViewCatalogEntry entry in catalog.Views)
@@ -60,7 +117,7 @@ public static class HeadlessRunner
     List<LinePayload> lines = asked.Select(name => ReadLine(book, views, name)).ToList();
     if (json)
     {
-      Console.WriteLine(JsonSerializer.Serialize(lines, JsonOptions));
+      Console.WriteLine(JsonSerializer.Serialize(lines, PayloadJson.IndentedTerminalOptions));
     }
     else
     {
@@ -86,7 +143,7 @@ public static class HeadlessRunner
     try
     {
       book.Facts.TryGetValue(line, out Fact? fact);
-      string scope = fact?.Scope ?? book.Formulas[line].Scope;
+      string scope = book.ScopeOf(line)!;
       // Each scope formats with the formats.yaml nearest its folder, as a view there would.
       if (!views.TryGetValue(scope, out (View View, Engine Engine) scoped))
       {
@@ -217,7 +274,7 @@ public static class HeadlessRunner
           Repeated = repeated,
           Unboxed = unboxed
         },
-        JsonOptions));
+        PayloadJson.IndentedTerminalOptions));
       return ok ? 0 : 1;
     }
 
@@ -286,7 +343,7 @@ public static class HeadlessRunner
     if (json)
     {
       ViewTablePayload table = ViewTablePayloadBuilder.Build(query.ViewId, payload);
-      Console.WriteLine(JsonSerializer.Serialize(table, ViewJsonOptions));
+      Console.WriteLine(JsonSerializer.Serialize(table, PayloadJson.TerminalOptions));
     }
     else
     {
@@ -326,13 +383,13 @@ public static class HeadlessRunner
     }
 
     var engine = new Engine(view);
-    CellPayload cell = PayloadBuilder.BuildCell(view, engine, table, position.Value.Row, position.Value.Column).Cell;
+    CellPayload cell = PayloadBuilder.BuildCell(view, engine, table, position.Value.Row, position.Value.Column);
     bool unresolved = cell.Unresolved || cell.Exact is null;
     if (json)
     {
       // An unresolved cell still prints, since its inputs show which one is missing.
       ValuePayload payload = ValuePayloadBuilder.Build(view, engine, query.ViewId, cell);
-      Console.WriteLine(JsonSerializer.Serialize(payload, JsonOptions));
+      Console.WriteLine(JsonSerializer.Serialize(payload, PayloadJson.IndentedTerminalOptions));
       return unresolved ? 1 : 0;
     }
     if (unresolved)

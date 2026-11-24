@@ -440,7 +440,7 @@ public static class XlsxExport
         new List<ExportCell?> { Text("Lines the views read but do not show") }
       });
       foreach (IGrouping<string, (CellCoordinate Coordinate, ResolvedCell? Cell)> block in
-        needed.GroupBy(item => LineScope(item.Coordinate.Line)))
+        needed.GroupBy(item => book.ScopeOf(item.Coordinate.Line) ?? ""))
       {
         List<string> periods = book.PeriodsFor(block.Key);
         List<string> columns = block.Select(item => item.Coordinate.Column).Distinct()
@@ -553,13 +553,6 @@ public static class XlsxExport
       {
         return null;
       }
-    }
-
-    private string LineScope(string line)
-    {
-      return book.Formulas.TryGetValue(line, out Formula? formula)
-        ? formula.Scope
-        : book.Facts.TryGetValue(line, out Fact? fact) ? fact.Scope : "";
     }
 
     private string BlockTitle(string scope)

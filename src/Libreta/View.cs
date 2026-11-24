@@ -49,7 +49,8 @@ public class View
   /// </summary>
   public static View ForLine(Book book, string line)
   {
-    string scope = book.Formulas.TryGetValue(line, out Formula? formula) ? formula.Scope : book.Facts[line].Scope;
+    string scope = book.ScopeOf(line)!;
+    book.Formulas.TryGetValue(line, out Formula? formula);
     string folder = book.FoldersByScope.GetValueOrDefault(scope) ?? book.Root;
     var presentation = new ViewFile
     {

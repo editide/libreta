@@ -132,7 +132,7 @@ These are pure moves with no behavior change.
 Suggested split: `Book.cs`, `Model.cs` (the domain classes), `View.cs`, `BookStore.cs`, `HeadlessRunner.cs`, `Payloads.cs` (every payload record, page and command line), `PayloadBuilder.cs`.
 Update the `Api.cs` sentence in `AGENTS.md` to match.
 
-### S6. Headless commands are dispatched in two places (verified)
+### S6. Headless commands are dispatched in two places (done)
 
 `Program.cs:100`–`179` handles `Export`, `SetRegions`, `ShowRegions` and then everything else, in four blocks that each repeat the same `try`/`catch` printing `exception.Message` and returning 1.
 `HeadlessRunner.Run` throws "not a console command" for the three it is not given (`CommandLine.cs:474`).
@@ -153,7 +153,7 @@ Two callers build the full payload and discard the detail:
 Splitting the two would let those callers skip the detail and let the page fetch a cell's detail when it is selected.
 The HTML export still has to embed everything, so its size would not change.
 
-### S8. Small duplications (verified)
+### S8. Small duplications (done)
 
 - **Scope of a line.** `Formulas.TryGetValue(line) ? formula.Scope : Facts.TryGetValue(line) ? fact.Scope : …` appears in `Book.ResolveCoordinateColumn` (`View.cs:510`), `Book.ColumnsInRange` (`View.cs:547`), `View.ForLine` (`View.cs:1172`), `PayloadBuilder.ScopeOf` (`Api.cs:701`), `XlsxExport.LineScope` (`XlsxExport.cs:558`) and `HeadlessRunner.ReadLine` (`CommandLine.cs:530`). Two of them try the fact first, four the formula first. Add one `Book.ScopeOf(line)`.
 - **Path is inside root.** The `relative == ".." || StartsWith("../") || IsPathRooted` test appears at `Program.cs:522`, `View.cs:969`, `View.cs:1105` (`IsWithin`) and `BookStructure.cs:168`. Make `IsWithin` shared.
@@ -187,12 +187,12 @@ The JSON and the CSS class names must not change, since `app.js` and `app.css` k
 
 ### Server removals
 
-- `CellDetailPayload.Formulas` is never read; `BuildCell` can return `CellPayload` (`Api.cs:93`, `Api.cs:590`). Verified by grep.
-- `ActiveDependency.Scope` is never read (`Engine.cs:22`). Verified by grep.
+- ~~`CellDetailPayload.Formulas` is never read; `BuildCell` can return `CellPayload` (`Api.cs:93`, `Api.cs:590`). Verified by grep.~~ Removed.
+- ~~`ActiveDependency.Scope` is never read (`Engine.cs:22`). Verified by grep.~~ Removed.
 - ~~`Fact.Currency` and `Fact.FiscalYearEnd` (`View.cs:14`) are loaded, inherited from the book, and compared when fragments merge (`View.cs:908`), which can fail a load, but appear in no payload, command output or export.~~ Removed.
 - `BookFile.Description` and `BookFile.Identifiers` are parsed and validated but read by no production code. `docs/format.md:85` documents them as descriptive metadata, so leaving them is defensible.
 - `Engine.Value` (`Engine.cs:80`) is called only by tests. Harmless.
-- `YamlFile.Configure` (`YamlFile.cs:15`) is public but called only by `Deserializer()`.
+- ~~`YamlFile.Configure` (`YamlFile.cs:15`) is public but called only by `Deserializer()`.~~ Made private.
 
 ## Interface
 

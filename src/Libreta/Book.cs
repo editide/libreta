@@ -437,11 +437,22 @@ public class Book
     return ResolveColumn(name, scope) ?? name;
   }
 
+  public string? ScopeOf(string line)
+  {
+    return Formulas.TryGetValue(line, out Formula? formula)
+      ? formula.Scope
+      : Facts.TryGetValue(line, out Fact? fact) ? fact.Scope : null;
+  }
+
+  public CellCoordinate? Coordinate(RefExpr reference, string column, string scope, string? currentLine)
+  {
+    string? name = ResolveSelf(reference.Name, scope, currentLine);
+    return name is null ? null : new CellCoordinate(name, ReferenceColumn(reference.Column, column, scope, name));
+  }
+
   public string? ResolveCoordinateColumn(string name, string scope, string line)
   {
-    string lineScope = Formulas.TryGetValue(line, out Formula? formula)
-      ? formula.Scope
-      : Facts.TryGetValue(line, out Fact? fact) ? fact.Scope : scope;
+    string lineScope = ScopeOf(line) ?? scope;
     string? calculated = ResolveColumn(name, lineScope);
     if (calculated is not null)
     {
@@ -476,9 +487,7 @@ public class Book
 
   public List<string> ColumnsInRange(string line, string start, string end)
   {
-    string scope = Formulas.TryGetValue(line, out Formula? formula)
-      ? formula.Scope
-      : Facts.TryGetValue(line, out Fact? fact) ? fact.Scope : "";
+    string scope = ScopeOf(line) ?? "";
     List<string> periods = PeriodsFor(scope);
     int startIndex = periods.IndexOf(start);
     int endIndex = periods.IndexOf(end);
@@ -931,14 +940,11 @@ public class Book
     }
 
     string path = Path.GetFullPath(image, Path.GetDirectoryName(metadataPath)!);
-    string relative = Path.GetRelativePath(Root, path);
-    if (relative == ".." || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
-      Path.IsPathRooted(relative))
+    if (!IsWithin(Root, path))
     {
       throw new InvalidDataException($"'{metadataPath}' source.image must stay inside the book");
     }
-    string extension = Path.GetExtension(path).ToLowerInvariant();
-    if (extension is not ".png" and not ".jpg" and not ".jpeg" and not ".webp")
+    if (BookStore.ImageContentType(path) is null)
     {
       throw new InvalidDataException(
         $"'{metadataPath}' source.image must be a PNG, JPEG, or WebP image");
@@ -947,7 +953,7 @@ public class Book
     {
       throw new InvalidDataException($"'{metadataPath}' source.image does not exist: {image}");
     }
-    return relative.Replace(Path.DirectorySeparatorChar, '/');
+    return Path.GetRelativePath(Root, path).Replace(Path.DirectorySeparatorChar, '/');
   }
 
   private static void ValidateConvention(string path, string property, string value, params string[] allowed)
@@ -1010,7 +1016,7 @@ public class Book
       throw new InvalidDataException(
         $"'{name}' names every included book, which only sum, min, max, average, or median can take as an argument");
     }
-    foreach (Expr child in Children(expression))
+    foreach (Expr child in Expr.Children(expression))
     {
       if (expression is FunctionExpr function && Aggregates.Contains(function.Name) &&
         Wildcard(child) is (string, int, int) wildcard)
@@ -1037,19 +1043,6 @@ public class Book
         : null;
   }
 
-  private static IEnumerable<Expr> Children(Expr expression)
-  {
-    return expression switch
-    {
-      FunctionExpr function => function.Arguments,
-      PriorExpr prior => new[] { prior.Inner },
-      UnaryExpr unary => new[] { unary.Operand },
-      BinaryExpr binary => new[] { binary.Left, binary.Right },
-      ComparisonExpr comparison => new[] { comparison.Left, comparison.Right },
-      _ => Array.Empty<Expr>()
-    };
-  }
-
   private BookDefinition DefinitionForScope(string scope)
   {
     return Structure.Definitions
@@ -1068,7 +1061,7 @@ public class Book
     return scope == definition.Namespace ? "" : scope[(definition.Namespace.Length + 2)..];
   }
 
-  private static bool IsWithin(string root, string path)
+  public static bool IsWithin(string root, string path)
   {
     string relative = Path.GetRelativePath(root, path);
     return relative != ".." && !relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&

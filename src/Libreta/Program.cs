@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using Libreta;
 
@@ -85,91 +84,11 @@ else
 }
 
 InstanceRegistry registry = InstanceRegistry.Default;
-if (options.Command == HeadlessCommand.Url)
-{
-  ServerInstance? running = registry.Find(root);
-  if (running is null)
-  {
-    Console.Error.WriteLine($"no server is running {root}.");
-    return 1;
-  }
-  Console.WriteLine(running.Url);
-  return 0;
-}
-
-if (options.Command == HeadlessCommand.Export)
-{
-  try
-  {
-    using GitFiles? commit = options.At is null ? null : GitFiles.Open(root, options.At);
-    if (Path.GetExtension(options.Output!).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
-    {
-      // Built in memory so a book that fails to export leaves no half-written workbook behind.
-      using var workbook = new MemoryStream();
-      XlsxExport.Write(root, workbook, commit);
-      File.WriteAllBytes(options.Output!, workbook.ToArray());
-    }
-    else
-    {
-      File.WriteAllText(options.Output!, HtmlExport.Build(root, InterfaceFolder(), source: commit));
-    }
-    Console.WriteLine($"  wrote {options.Output} ({new FileInfo(options.Output!).Length / 1024} KB)");
-    return 0;
-  }
-  catch (Exception exception)
-  {
-    Console.Error.WriteLine(exception.Message);
-    return 1;
-  }
-}
-
-if (options.Command == HeadlessCommand.SetRegions)
-{
-  try
-  {
-    SourceRegionResult result = SourceRegionWriter.Write(root, options.RegionsTable!, options.RegionsFile!);
-    Console.WriteLine($"  wrote {result.Regions} regions to {options.RegionsTable}");
-    if (result.Unboxed.Count > 0)
-    {
-      Console.WriteLine($"  unboxed: {SourceRegionWriter.Summarize(result.Unboxed)}");
-    }
-    return 0;
-  }
-  catch (Exception exception)
-  {
-    Console.Error.WriteLine(exception.Message);
-    return 1;
-  }
-}
-
-if (options.Command == HeadlessCommand.ShowRegions)
-{
-  try
-  {
-    List<RegionImage> images = SourceRegionImages.Write(root, options.RegionsTable!, options.Output!);
-    int width = images.Select(image => image.Line.Length + image.Period.Length + 2).DefaultIfEmpty().Max();
-    int printedWidth = images.Select(image => image.Printed.Length).DefaultIfEmpty().Max();
-    foreach (RegionImage image in images)
-    {
-      string cell = $"{image.Line}[{image.Period}]";
-      Console.WriteLine(
-        $"  {cell.PadRight(width)}  {image.Printed.PadRight(printedWidth)}  {image.File ?? image.Problem}");
-    }
-    Console.WriteLine($"  {images.Count(image => image.File is not null)} regions written to {options.Output}");
-    return images.Any(image => image.Problem is not null) ? 1 : 0;
-  }
-  catch (Exception exception)
-  {
-    Console.Error.WriteLine(exception.Message);
-    return 1;
-  }
-}
-
 if (options.Command is not null)
 {
   try
   {
-    return HeadlessRunner.Run(root, options.Command.Value, options.Query, options.Json, options.Lines, options.At);
+    return HeadlessRunner.Run(root, options, registry, InterfaceFolder);
   }
   catch (Exception exception)
   {
@@ -419,11 +338,7 @@ static void ShowCell(string url, int pages, string line, string column, bool ope
 {
   if (json)
   {
-    var terminal = new JsonSerializerOptions(PayloadJson.Options)
-    {
-      Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
-    Console.WriteLine(JsonSerializer.Serialize(new CellPage(url, pages), terminal));
+    Console.WriteLine(JsonSerializer.Serialize(new CellPage(url, pages), PayloadJson.TerminalOptions));
   }
   else if (pages > 0)
   {

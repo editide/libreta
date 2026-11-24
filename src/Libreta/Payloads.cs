@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -11,6 +12,17 @@ public static class PayloadJson
     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     MaxDepth = 512
+  };
+
+  // The default encoder escapes formula punctuation like + and ' for embedding in HTML, which a terminal never needs.
+  public static readonly JsonSerializerOptions TerminalOptions = new JsonSerializerOptions(Options)
+  {
+    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+  };
+
+  public static readonly JsonSerializerOptions IndentedTerminalOptions = new JsonSerializerOptions(TerminalOptions)
+  {
+    WriteIndented = true
   };
 }
 
@@ -90,9 +102,6 @@ public record DependentPayload(
   string Kind,
   string? SourceView,
   bool Hidden);
-
-/// <summary>One cell requested alone (<c>--value</c>), carrying the formula expansions its references need.</summary>
-public record CellDetailPayload(CellPayload Cell, Dictionary<string, FormulaPayload> Formulas);
 
 /// <summary>A column header. <c>Kind</c> tells the page whether the line runs across the row or down the column;
 /// a column that is one line carries the same metadata as a row.</summary>

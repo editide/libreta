@@ -36,6 +36,19 @@ public abstract class Expr
     return Walk(expression) && any;
   }
 
+  public static IEnumerable<Expr> Children(Expr expression)
+  {
+    return expression switch
+    {
+      FunctionExpr function => function.Arguments,
+      PriorExpr prior => new[] { prior.Inner },
+      UnaryExpr unary => new[] { unary.Operand },
+      BinaryExpr binary => new[] { binary.Left, binary.Right },
+      ComparisonExpr comparison => new[] { comparison.Left, comparison.Right },
+      _ => Array.Empty<Expr>()
+    };
+  }
+
 
 }
 

@@ -19,7 +19,7 @@ public record ResolvedCell(
   public bool Unresolved => Value is null && Text is null;
 }
 
-public readonly record struct ActiveDependency(string Reference, string? Line, string Column, string Scope);
+public readonly record struct ActiveDependency(string Reference, string? Line, string Column);
 
 /// <summary>One written reference and the cell it reads; two mentions of a line at two columns stay apart.</summary>
 public readonly record struct FormulaReference(int Start, int Length, string Line, string? Column);
@@ -90,13 +90,12 @@ public class Engine
         return number.Value;
 
       case RefExpr reference:
-        string? name = _view.Book.ResolveSelf(reference.Name, scope, currentLine);
-        if (name is null)
+        if (_view.Book.Coordinate(reference, column, scope, currentLine) is not CellCoordinate coordinate)
         {
           return null;
         }
-        RequireNumeric(name);
-        return CellAt(name, ReferenceColumn(reference, column, scope, name)).Value;
+        RequireNumeric(coordinate.Line);
+        return CellAt(coordinate.Line, coordinate.Column).Value;
 
       case RangeExpr:
         throw new InvalidOperationException("A range can only be used as a function argument");
@@ -454,24 +453,23 @@ public class Engine
         return;
 
       case RefExpr reference:
-        string? referenceLine = _view.Book.ResolveSelf(reference.Name, scope, currentLine);
+        CellCoordinate? coordinate = _view.Book.Coordinate(reference, column, scope, currentLine);
         dependencies.Add(new ActiveDependency(
           reference.Name,
-          referenceLine,
-          referenceLine is null ? reference.Column ?? column : ReferenceColumn(reference, column, scope, referenceLine),
-          scope));
+          coordinate?.Line,
+          coordinate?.Column ?? reference.Column ?? column));
         return;
 
       case RangeExpr range:
         string? rangeLine = _view.Book.ResolveSelf(range.Name, scope, currentLine);
         if (rangeLine is null)
         {
-          dependencies.Add(new ActiveDependency(range.Name, null, column, scope));
+          dependencies.Add(new ActiveDependency(range.Name, null, column));
           return;
         }
         foreach (string rangeColumn in _view.Book.ColumnsInRange(rangeLine, range.StartColumn, range.EndColumn))
         {
-          dependencies.Add(new ActiveDependency(range.Name, rangeLine, rangeColumn, scope));
+          dependencies.Add(new ActiveDependency(range.Name, rangeLine, rangeColumn));
         }
         return;
 
@@ -558,11 +556,6 @@ public class Engine
     }
   }
 
-  private string ReferenceColumn(RefExpr reference, string column, string scope, string line)
-  {
-    return _view.Book.ReferenceColumn(reference.Column, column, scope, line);
-  }
-
   private ResolvedCell ResolveDefault(string line, string column)
   {
     if (!_view.Facts.ContainsKey(line) && !_view.Formulas.ContainsKey(line))
@@ -637,27 +630,25 @@ public class Engine
           : Availability(prior.Inner, priorPeriod, scope, currentLine, path);
 
       case RefExpr reference:
-        string? name = _view.Book.ResolveSelf(reference.Name, scope, currentLine);
-        if (name is null)
+        if (_view.Book.Coordinate(reference, column, scope, currentLine) is not CellCoordinate coordinate)
         {
           return EvaluationAvailability.Unresolved;
         }
-        string referenceColumn = ReferenceColumn(reference, column, scope, name);
-        (string, string) key = (name, referenceColumn);
+        (string, string) key = (coordinate.Line, coordinate.Column);
         if (!path.Add(key))
         {
           return EvaluationAvailability.Unresolved;
         }
         try
         {
-          ResolvedCell cell = CellAt(name, referenceColumn);
+          ResolvedCell cell = CellAt(coordinate.Line, coordinate.Column);
           if (cell.Value is not null)
           {
             return EvaluationAvailability.Available;
           }
           return cell.Expression is null
             ? EvaluationAvailability.Unresolved
-            : Availability(cell.Expression, referenceColumn, cell.Scope ?? scope, name, path);
+            : Availability(cell.Expression, coordinate.Column, cell.Scope ?? scope, coordinate.Line, path);
         }
         catch (InvalidOperationException)
         {
@@ -844,8 +835,9 @@ public class Engine
         return false;
 
       case RefExpr reference:
-        string? name = _view.Book.ResolveSelf(reference.Name, scope, currentLine);
-        return name is null ? null : CellAt(name, ReferenceColumn(reference, column, scope, name)).Date;
+        return _view.Book.Coordinate(reference, column, scope, currentLine) is CellCoordinate coordinate
+          ? CellAt(coordinate.Line, coordinate.Column).Date
+          : null;
 
       case PriorExpr prior:
         string? priorPeriod = _view.Book.PriorPeriod(scope, column);

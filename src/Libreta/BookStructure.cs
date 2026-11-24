@@ -164,9 +164,7 @@ public sealed class BookStructure
         throw new InvalidDataException($"'{path}' inclusion '{inclusion.Id}' must use a relative path");
       }
       string childRoot = Path.GetFullPath(inclusion.Path, canonicalRoot);
-      string relative = Path.GetRelativePath(canonicalRoot, childRoot);
-      if (relative == ".." || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
-        Path.IsPathRooted(relative))
+      if (!Book.IsWithin(canonicalRoot, childRoot))
       {
         throw new InvalidDataException($"'{path}' inclusion '{inclusion.Id}' must stay inside the parent book");
       }

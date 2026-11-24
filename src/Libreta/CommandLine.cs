@@ -172,15 +172,13 @@ public class CommandLineOptions
 
     if (command is not null && portSpecified)
     {
-      throw new ArgumentException(
-        "--port cannot be combined with --list, --view, --value, --lines, --check, --export, --set-regions, " +
-        "--show-regions or --url.");
+      throw new ArgumentException($"--port cannot be combined with {AllCommands}.");
     }
     if ((command is HeadlessCommand.Export or HeadlessCommand.Url or HeadlessCommand.SetRegions or
       HeadlessCommand.ShowRegions ||
       command is null && cell is null) && json)
     {
-      throw new ArgumentException("--json requires --list, --view, --value, --lines, --check or --cell.");
+      throw new ArgumentException($"--json requires {JsonCommands}.");
     }
     if (cell is not null && command is not null)
     {
@@ -195,8 +193,7 @@ public class CommandLineOptions
       (HeadlessCommand.List or HeadlessCommand.View or HeadlessCommand.Value or HeadlessCommand.Lines or
       HeadlessCommand.Check or HeadlessCommand.Export))
     {
-      throw new ArgumentException("--at reads a book as a revision left it, so it needs --list, --view, --value, " +
-        "--lines, --check or --export.");
+      throw new ArgumentException($"--at reads a book as a revision left it, so it needs {RevisionCommands}.");
     }
     if (documentation is not null &&
       (root is not null || command is not null || portSpecified || json || cell is not null))
@@ -242,7 +239,7 @@ public class CommandLineOptions
       "and outlined, to read back against its value)");
     writer.WriteLine("  libreta [<book-root>] --url   (the address of the server already running the book)");
     writer.WriteLine("  libreta <book-root> <headless command> --at <revision>   (the book as a git revision left it, " +
-      "read without checking it out; with --list, --view, --value, --lines, --check or --export)");
+      $"read without checking it out; with {RevisionCommands})");
     writer.WriteLine("  libreta --docs [format|running]");
     writer.WriteLine("  libreta --version");
     writer.WriteLine();
@@ -250,6 +247,11 @@ public class CommandLineOptions
     writer.WriteLine("the server opens a browser tab, reuses one already serving the book, and stops with no tab open");
     writer.WriteLine("--no-open leaves opening the page to the caller, as a tool linking to the book does");
   }
+
+  private const string AllCommands =
+    "--list, --view, --value, --lines, --check, --export, --set-regions, --show-regions or --url";
+  private const string JsonCommands = "--list, --view, --value, --lines, --check or --cell";
+  private const string RevisionCommands = "--list, --view, --value, --lines, --check or --export";
 
   private static void Require(string[] arguments, int optionIndex, int valueCount)
   {
@@ -264,9 +266,7 @@ public class CommandLineOptions
   {
     if (command is not null)
     {
-      throw new ArgumentException(
-        $"Use only one of --list, --view, --value, --lines, --check, --export, --set-regions, --show-regions or " +
-        $"--url; found '{argument}' after another.");
+      throw new ArgumentException($"Use only one of {AllCommands}; found '{argument}' after another.");
     }
   }
 

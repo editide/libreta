@@ -14,7 +14,7 @@ public static class YamlFile
     return Configure(new DeserializerBuilder()).Build();
   }
 
-  public static DeserializerBuilder Configure(DeserializerBuilder builder)
+  private static DeserializerBuilder Configure(DeserializerBuilder builder)
   {
     return builder
       .WithNamingConvention(UnderscoredNamingConvention.Instance)

@@ -37,8 +37,7 @@ public class BookStore : IDisposable
     // Inherited formats usually sit above the book root, so they need watching where they actually are.
     foreach (string formats in Formatter.LocateAll(root, root))
     {
-      string relative = Path.GetRelativePath(root, formats);
-      if (relative == ".." || relative.StartsWith($"..{Path.DirectorySeparatorChar}"))
+      if (!Book.IsWithin(root, formats))
       {
         Watch(Path.GetDirectoryName(formats)!, "formats.yaml", false);
       }
@@ -336,7 +335,7 @@ public class BookStore : IDisposable
 
   private static bool IsBookFile(string path)
   {
-    return Path.GetExtension(path).ToLowerInvariant() is ".yaml" or ".csv" or ".png" or ".jpg" or ".jpeg" or ".webp";
+    return Path.GetExtension(path).ToLowerInvariant() is ".yaml" or ".csv" || ImageContentType(path) is not null;
   }
 
   private void ScheduleReload()
