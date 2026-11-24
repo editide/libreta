@@ -61,8 +61,6 @@ Context that applies to a whole book belongs in its `book.yaml`.
 name: Acme Inc.
 short_name: Acme
 units: millions
-currency: USD
-fiscal_year_end: December 31
 
 identifiers:
   cik: "1234567"
@@ -76,10 +74,9 @@ navigation:
 `name`, `short_name`, and a `navigation` list are required.
 `name` is the full human-readable identity, while `short_name` is its compact UI label or abbreviation.
 
-`units`, `currency`, and `fiscal_year_end` are optional defaults.
-Facts and formulas within the book inherit those defaults unless a closer definition overrides them.
+`units` is an optional default.
+Facts and formulas within the book inherit it unless a closer definition overrides it.
 A fact line resolves units from its line item, then its fact-table defaults, then its book.
-A fact table resolves currency from its defaults and fiscal year end from its table metadata before falling back to its book.
 A formula resolves units from its own definition before falling back to its book.
 An included child starts a new inheritance chain from its own `book.yaml`; parent defaults never flow into it.
 
@@ -169,7 +166,7 @@ A cell in double quotes may hold commas, with `""` standing for a quote, but no 
 Several fact tables in one scope may contain the same line when the populated periods do not overlap.
 Libreta combines those fragments into one line while each cell keeps its own table's provenance, so annual and interim filings can contribute columns to one view.
 A repeated populated coordinate is an error naming both CSV files, even when the two values agree.
-Combined fragments must agree on the line's units, currency, fiscal year end, and additive or contra sign.
+Combined fragments must agree on the line's units and additive or contra sign.
 
 Subtotals a source prints are stored as facts rather than recalculated, because a source rounds and a recalculation does not.
 For example, store printed earnings per share and compare it with the underlying division in `checks.yaml`.

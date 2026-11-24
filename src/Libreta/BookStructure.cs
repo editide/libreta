@@ -18,7 +18,7 @@ public sealed class BookStructure
 {
   private static readonly HashSet<string> BookProperties = new HashSet<string>
   {
-    "name", "short_name", "description", "units", "currency", "fiscal_year_end", "identifiers", "navigation", "books"
+    "name", "short_name", "description", "units", "identifiers", "navigation", "books"
   };
   /// <summary>How a formula names every included book at once instead of listing them.</summary>
   public const string InclusionWildcard = "books";
@@ -218,9 +218,7 @@ public sealed class BookStructure
       Name = Scalar(root, "name"),
       ShortName = Scalar(root, "short_name"),
       Description = Scalar(root, "description"),
-      Units = Scalar(root, "units"),
-      Currency = Scalar(root, "currency"),
-      FiscalYearEnd = Scalar(root, "fiscal_year_end")
+      Units = Scalar(root, "units")
     };
     if (file.Name.Length == 0)
     {

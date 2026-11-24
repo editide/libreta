@@ -189,7 +189,7 @@ The JSON and the CSS class names must not change, since `app.js` and `app.css` k
 
 - `CellDetailPayload.Formulas` is never read; `BuildCell` can return `CellPayload` (`Api.cs:93`, `Api.cs:590`). Verified by grep.
 - `ActiveDependency.Scope` is never read (`Engine.cs:22`). Verified by grep.
-- `Fact.Currency` and `Fact.FiscalYearEnd` (`View.cs:14`) are loaded, inherited from the book, and compared when fragments merge (`View.cs:908`), which can fail a load, but appear in no payload, command output or export. `docs/format.md` documents both. Either surface them, for example in `--lines --json` and the inspector, or drop the plumbing and the conflict check. This is a product decision; ask before removing.
+- ~~`Fact.Currency` and `Fact.FiscalYearEnd` (`View.cs:14`) are loaded, inherited from the book, and compared when fragments merge (`View.cs:908`), which can fail a load, but appear in no payload, command output or export.~~ Removed.
 - `BookFile.Description` and `BookFile.Identifiers` are parsed and validated but read by no production code. `docs/format.md:85` documents them as descriptive metadata, so leaving them is defensible.
 - `Engine.Value` (`Engine.cs:80`) is called only by tests. Harmless.
 - `YamlFile.Configure` (`YamlFile.cs:15`) is public but called only by `Deserializer()`.

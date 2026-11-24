@@ -96,7 +96,6 @@ public static class FactTableReader
         switch (key)
         {
           case "title": table.Title = String()!; break;
-          case "fiscal_year_end": table.FiscalYearEnd = String()!; break;
           default: throw new UnfamiliarException();
         }
       });
@@ -124,7 +123,6 @@ public static class FactTableReader
         switch (key)
         {
           case "units": defaults.Units = String()!; break;
-          case "currency": defaults.Currency = String()!; break;
           case "printed": defaults.Printed = String()!; break;
           case "sign": defaults.Sign = String()!; break;
           case "missing": defaults.Missing = String()!; break;

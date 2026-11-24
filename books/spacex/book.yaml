@@ -3,9 +3,7 @@ short_name: SPCX
 description: >
   Three years of audited statements from the IPO prospectus and the first half of 2026 from the June 2026 quarterly
   report, reconciled by segment, feeding a segment-driven discounted cash flow valued at June 30, 2026.
-currency: USD
 units: millions
-fiscal_year_end: December 31
 identifiers:
   cik: "1181412"
   ticker: SPCX

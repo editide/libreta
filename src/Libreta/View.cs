@@ -13,8 +13,6 @@ public class Fact
   public string Scope { get; set; } = "";
   public string Label { get; set; } = "";
   public string? Units { get; set; }
-  public string? Currency { get; set; }
-  public string? FiscalYearEnd { get; set; }
 
   /// <summary>The line runs against its subtotal: an expense or a contra account. Stored in natural direction; only
   /// the rendered cell is negated.</summary>
@@ -894,8 +892,6 @@ public class Book
         Scope = scope,
         Label = lineItem?.Label ?? "",
         Units = ValueOrDefault(lineItem?.Units, metadata.Defaults.Units, bookFile.Units),
-        Currency = ValueOrDefault(metadata.Defaults.Currency, bookFile.Currency),
-        FiscalYearEnd = ValueOrDefault(metadata.Table.FiscalYearEnd, bookFile.FiscalYearEnd),
         Contra = sign == "contra",
         MissingZero = (lineItem?.Missing ?? metadata.Defaults.Missing) == "zero",
         Notes = string.IsNullOrWhiteSpace(lineItem?.Note)
@@ -983,9 +979,6 @@ public class Book
     }
 
     RequireMatchingFactMetadata(existing, incoming, csvPath, nameof(Fact.Units), existing.Units, incoming.Units);
-    RequireMatchingFactMetadata(existing, incoming, csvPath, nameof(Fact.Currency), existing.Currency, incoming.Currency);
-    RequireMatchingFactMetadata(
-      existing, incoming, csvPath, nameof(Fact.FiscalYearEnd), existing.FiscalYearEnd, incoming.FiscalYearEnd);
     RequireMatchingFactMetadata(existing, incoming, csvPath, nameof(Fact.Contra), existing.Contra, incoming.Contra);
     RequireMatchingFactMetadata(existing, incoming, csvPath, nameof(Fact.Date), existing.Date, incoming.Date);
     RequireMatchingFactMetadata(existing, incoming, csvPath, nameof(Fact.Text), existing.Text, incoming.Text);
