@@ -1790,18 +1790,13 @@ function cleanClipboardValue(value) {
   return String(value ?? '').replace(/[\t\r\n]+/g, ' ');
 }
 
-function displayedExactValue(cell) {
-  if (cell.exact == null || !cell.contra || Number(cell.exact) === 0) return cell.exact;
-  return cell.exact.startsWith('-') ? cell.exact.slice(1) : `-${cell.exact}`;
-}
-
 function coordinateText(coordinate, exact) {
   const { index, periodIndex } = coordinate;
   if (index === COLUMN_AXIS) return periodIndex === -1 ? '' : payload.columns[periodIndex]?.label ?? '';
   const row = payload.rows[index];
   if (periodIndex === -1) return row.label ?? '';
   const cell = row.cells[periodIndex];
-  return exact ? displayedExactValue(cell) : cell.display;
+  return exact ? (cell.displayExact ?? cell.exact) : cell.display;
 }
 
 function selectedRangeTsv(exact = false) {
@@ -1866,7 +1861,7 @@ function selectedRangeSummary() {
   let numericCount = 0;
   for (const cell of cells) {
     if (cell.exact == null || cell.text) continue;
-    const value = Number(displayedExactValue(cell));
+    const value = Number(cell.displayExact ?? cell.exact);
     if (!Number.isFinite(value)) continue;
     numericCount++;
     const units = cell.units ?? '';

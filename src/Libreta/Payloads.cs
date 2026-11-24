@@ -88,6 +88,9 @@ public record CellPayload(
 
   public bool Rounded { get; init; }
 
+  /// <summary>Exact value in display direction when <c>Contra</c> flips the sign of a non-zero number.</summary>
+  public string? DisplayExact { get; init; }
+
   public List<DependentPayload> Dependents { get; init; } = new List<DependentPayload>();
 }
 

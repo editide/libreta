@@ -158,6 +158,9 @@ public static class PayloadBuilder
     {
       Text = cell.Text is not null,
       Rounded = cell.Text is null && cell.Value is double value && view.Formatter.IsRounded(cell.Units, value),
+      DisplayExact = contra && cell.Text is null && cell.Value is double exactValue && exactValue != 0
+        ? view.Formatter.Exact(cell.Units, -exactValue)
+        : null,
       Dependents = Dependents(view, engine, readers.GetValueOrDefault(coordinate), presentation)
     };
   }
