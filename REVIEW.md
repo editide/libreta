@@ -25,7 +25,7 @@ Confidence labels used below:
 2. ~~Skip text cells in the range summary (bug F2, one line).~~ Done (`dcbd7ec`).
 3. ~~One engine per book, and view payloads built on request (S1, S2).~~ Done (`fa3af85`, `e7a47aa`).
 4. ~~Split `render()` so selection does not rebuild the table (F4, F5).~~ Done.
-5. Move types into files named for them (S5).
+5. ~~Move types into files named for them (S5).~~ Done.
 6. The removals and small duplications, in any order.
 
 ## How the server was measured
@@ -119,7 +119,7 @@ Not worth doing alone.
 S1 removes most of the calls anyway.
 If it is done, the memo is valid only once loading has finished, since the dictionaries it consults are still filling during `Book.Load`.
 
-### S5. Files do not hold what their names say (verified)
+### S5. Files do not hold what their names say (done)
 
 These are pure moves with no behavior change.
 
