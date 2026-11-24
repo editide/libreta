@@ -5,12 +5,12 @@ const { loadApp } = require('./helpers/appHarness');
 function copy(selection, cellRanges = []) {
   const app = loadApp();
   app.set({
-    selection,
     payload: {
       columns: [{ label: 'FY2024' }, { label: 'FY2025' }],
       rows: [{ label: 'Revenue', cells: [{ display: '1,200' }, { display: '1,500' }] }]
     }
   });
+  app.eval('viewState').selection = selection;
   app.selectedCoordinates = () => cellRanges;
   app.selectedRangeTsv = () => 'range';
   let copied = null;

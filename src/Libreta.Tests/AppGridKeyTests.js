@@ -71,8 +71,8 @@ test('arrow keys move focus and refresh the inspector without rebuilding the tab
   const focused = [];
   let panelUpdates = 0;
   const app = loadApp();
-  app.set({
-    payload: { columns: [{}, {}, {}], rows },
+  app.set({ payload: { columns: [{}, {}, {}], rows } });
+  Object.assign(app.eval('viewState'), {
     selection: { index: 1, periodIndex: 0 },
     cellRanges: [],
     sensitivitySelection: null,
@@ -83,11 +83,11 @@ test('arrow keys move focus and refresh the inspector without rebuilding the tab
   app.highlightTableCalculation = () => {};
   app.renderPanel = () => { panelUpdates++; };
   app.focusGridCell = () => {
-    const current = app.eval('selection');
+    const current = app.eval('viewState.selection');
     focused.push([current.index, current.periodIndex]);
   };
   for (const key of ['ArrowRight', 'ArrowDown']) {
-    const { index, periodIndex } = app.eval('selection');
+    const { index, periodIndex } = app.eval('viewState.selection');
     app.handleGridKey({ key, preventDefault() {} }, index, periodIndex);
   }
   assert.deepEqual(focused, [[1, 1], [2, 1]]);

@@ -24,7 +24,7 @@ Confidence labels used below:
 1. ~~Escape text cells in the page (bug F1, two lines).~~ Done (`dcbd7ec`).
 2. ~~Skip text cells in the range summary (bug F2, one line).~~ Done (`dcbd7ec`).
 3. ~~One engine per book, and view payloads built on request (S1, S2).~~ Done (`fa3af85`, `e7a47aa`).
-4. ~~Split `render()` so selection does not rebuild the table (F4, F5).~~ F4 done (`f894c0b`); F5 remaining.
+4. ~~Split `render()` so selection does not rebuild the table (F4, F5).~~ Done.
 5. Move types into files named for them (S5).
 6. The removals and small duplications, in any order.
 
@@ -205,8 +205,8 @@ The JSON and the CSS class names must not change, since `app.js` and `app.css` k
 ### Structure and performance
 
 - **F4. Every selection change rebuilds the page (done in `f894c0b`; event delegation optional).** `selectRow`, `selectColumn`, `inspectCell`, range extension and `moveSelection` all call `render()` (`app.js:968`, `974`, `980`, `1149`, `1328`). `render()` (`app.js:599`) rebuilds the head, body, checks, sensitivities and panel, and attaches three listeners per cell (`app.js:615`–`628`, `657`–`676`). One arrow key on a large table re-creates every cell and destroys then restores the focused node. The incremental path already exists where a pointer drag ends (`app.js:1232`): `syncGridSelection(); renderPanel(); highlightTableCalculation()`. Fix: split `renderTable()`, called only when the payload changes, from `updateSelection()`, and delegate pointer, click and key handling to `.book-table` once at boot, reading coordinates from `data-row-index` and `data-column` as `cellAtPoint` (`app.js:1153`) already does. This also removes the double render in F8.
-- **F5. Range highlighting is quadratic (verified).** `syncGridSelection` calls `gridCellNode` for every selected coordinate (`app.js:1082`), and each call is a fresh `querySelector` from the top of the body (`app.js:1055`), plus a `rowOrder.indexOf`. Selecting the whole table costs cells squared, on every step of a drag. Fix: build a `gridNodes[row][column]` array during render, beside `cellNodes`, and a map of row positions. About 10 lines.
-- **F6. View state is five globals with the field list copied in four places (verified).** `selection`, `cellRanges`, `sensitivitySelection`, `checksExpanded` and `calculationTrail` are cleared, remembered and restored at `app.js:501`, `564`, `583`, `959` and `774`. `clearViewState` already omits `calculationTrail`. Fix: one `viewState` object, cleared by assigning defaults, remembered with `structuredClone`. Removes about 20 lines. Leave the tooltip, zoom and shortcut variables as they are.
+- **F5. Range highlighting is quadratic (done).** `syncGridSelection` calls `gridCellNode` for every selected coordinate (`app.js:1082`), and each call is a fresh `querySelector` from the top of the body (`app.js:1055`), plus a `rowOrder.indexOf`. Selecting the whole table costs cells squared, on every step of a drag. Fix: build a `gridNodes[row][column]` array during render, beside `cellNodes`, and a map of row positions. About 10 lines.
+- **F6. View state is five globals with the field list copied in four places (done).** `selection`, `cellRanges`, `sensitivitySelection`, `checksExpanded` and `calculationTrail` are cleared, remembered and restored at `app.js:501`, `564`, `583`, `959` and `774`. `clearViewState` already omits `calculationTrail`. Fix: one `viewState` object, cleared by assigning defaults, remembered with `structuredClone`. Removes about 20 lines. Leave the tooltip, zoom and shortcut variables as they are.
 - **F7. `knownView` scans the catalog per row (verified).** `app.js:459`, called at `app.js:635` and twice per `renderPanel`. Keep a `Set` of view ids, rebuilt when the catalog loads.
 - **F8. Double render on the first key after Escape (done in `f894c0b`).** At `app.js:1419`–`1431`, with no selection and focus on a label, an arrow key runs `syncSelection()` and then `movePeriod`, each of which renders. Fixed by F4.
 
@@ -218,13 +218,13 @@ The JSON and the CSS class names must not change, since `app.js` and `app.css` k
 
 ### Removals and duplicates
 
-- **F12. Dead code (verified by grep: no CSS rule, no test reference).**
+- **F12. Dead code (done).**
   - `td.calculation-result` is added at `app.js:2154` and removed at `app.js:2146`–`2149`. The only rule, `.calculation .calculation-result` (`app.css:1903`), targets the inspector span, not the cell. The `removeAttribute('title')` at `app.js:2148` is a leftover.
   - `#checks.expanded` is toggled at `app.js:853`, `860` and `881`, and no CSS uses it.
   - `class="title-row"` and its inner `<div>` (`index.html:49`–`54`) are unstyled wrappers.
   - The `${entry.kind}` class on `.trend-chart` (`app.js:2305`) is unstyled.
 - **F13. Two bar-chart renderers (verified).** `renderSensitivityChart` (`app.js:1549`) and `renderChart` (`app.js:2274`) share `chartDomain` and `chartScale` and differ in the selected index, missing markers and label placement. One function saves about 30 lines and lets `.trend-chart*` and `.sensitivity-chart*` share rules.
-- **F14. CSS repeats (verified).**
+- **F14. CSS repeats (done).**
   - Button resets restated over the global `button` rule: `#inspector-back` (`app.css:2502`), `.inspector .dep` (`app.css:2137`), `.source-image` (`app.css:1667`), `#shortcuts-button` (`app.css:2213`). About 12 declarations.
   - `.calc-expand::after` (`app.css:1934`) is identical to `.formula-expand::after` (`app.css:1795`).
   - `.navigation` is declared twice inside the same `@media (max-width: 52rem)` (`app.css:2413`, `app.css:2456`).

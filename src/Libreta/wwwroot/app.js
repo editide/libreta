@@ -39,9 +39,7 @@ const sourceImageViewport = el('source-image-dialog').querySelector('.source-ima
 let payload = null;
 let catalog = null;
 let activeView = null;
-let selection = null;
-let cellRanges = [];
-let sensitivitySelection = null;
+let viewState = defaultViewState();
 let calculationHighlights = true;
 let formulaLabels = false;
 let pendingShortcut = null;
@@ -55,13 +53,9 @@ const phoneLayout =
   window.matchMedia('(pointer: coarse) and (max-width: 52rem), (pointer: coarse) and (max-height: 30rem)');
 // A phone has no room beside the table, so its navigation opens over it, and only when asked.
 let navigationVisible = !embedded && !compactLayout.matches && stored('navigationVisible') !== 'false';
-let checksExpanded = null;
-let openChecks = new Set();
 const requests = new RequestCoordinator();
 const branchStates = new Map();
 const formulaExpansions = new Map();
-// The values stepped into from the selected cell's calculation, outermost first.
-let calculationTrail = { cell: null, steps: [] };
 // Expansion ids join line and column with a NUL, which HTML attributes cannot carry, so buttons index into this.
 let calculationTargets = [];
 let revealedInitialView = false;
@@ -77,7 +71,21 @@ const COLUMN_AXIS = -1;
 const KIND_LABELS = { fact: 'Fact', formula: 'Calculated', book: 'Book', column: 'Column', metric: 'Line' };
 // Keyed by coordinate, not position, so highlighting survives a transpose.
 const cellNodes = new Map();
+// Keyed by gridKey(rowIndex, periodIndex), built during render so range selection stays linear.
+const gridNodes = new Map();
 let suppressCellClick = false;
+
+function defaultViewState() {
+  return {
+    selection: null,
+    cellRanges: [],
+    sensitivitySelection: null,
+    checksExpanded: null,
+    openChecks: new Set(),
+    // The values stepped into from the selected cell's calculation, outermost first.
+    calculationTrail: { cell: null, steps: [] }
+  };
+}
 
 // The middle column has a 36rem minimum, so every panel is capped against the window as well as a constant.
 const navWidth = createSize({
@@ -296,15 +304,17 @@ async function load() {
   }
   if (!requests.acceptView(request, activeView)) return false;
   payload = nextPayload;
-  const activeSensitivity = (payload.sensitivities ?? []).find((item) => item.name === sensitivitySelection?.name);
-  if (!activeSensitivity || !activeSensitivity.cells[sensitivitySelection.row]?.[sensitivitySelection.column]) {
-    sensitivitySelection = null;
+  const activeSensitivity = (payload.sensitivities ?? [])
+    .find((item) => item.name === viewState.sensitivitySelection?.name);
+  if (!activeSensitivity
+    || !activeSensitivity.cells[viewState.sensitivitySelection.row]?.[viewState.sensitivitySelection.column]) {
+    viewState.sensitivitySelection = null;
   }
-  if (selection?.periodIndex >= (payload.columns?.length ?? 0)) {
-    if (selection.index === COLUMN_AXIS) selection = null;
-    else selection.periodIndex = null;
+  if (viewState.selection?.periodIndex >= (payload.columns?.length ?? 0)) {
+    if (viewState.selection.index === COLUMN_AXIS) viewState.selection = null;
+    else viewState.selection.periodIndex = null;
   }
-  cellRanges = cellRanges.filter(validCellRegion);
+  viewState.cellRanges = viewState.cellRanges.filter(validCellRegion);
   render();
   return true;
 }
@@ -544,11 +554,7 @@ async function followReference(view, line, column, replace = false) {
 
 // An export keeps the view in the fragment: browsers disagree on letting a file: URL change its query.
 function clearViewState() {
-  selection = null;
-  cellRanges = [];
-  sensitivitySelection = null;
-  checksExpanded = null;
-  openChecks = new Set();
+  viewState = defaultViewState();
 }
 
 function requestedView() {
@@ -607,11 +613,11 @@ function rememberHistoryEntry() {
   if (activeView === null || payload === null) return;
   const viewport = document.querySelector('.table-viewport');
   historyStates.delete(historyEntry);
-  historyStates.set(historyEntry, JSON.parse(JSON.stringify({
-    view: activeView, selection, cellRanges, sensitivitySelection, checksExpanded,
-    openChecks: [...openChecks], calculationTrail,
+  historyStates.set(historyEntry, {
+    view: activeView,
+    state: { ...structuredClone(viewState), openChecks: [...viewState.openChecks] },
     scroll: { left: viewport.scrollLeft, top: viewport.scrollTop }
-  })));
+  });
   while (historyStates.size > 100) historyStates.delete(historyStates.keys().next().value);
 }
 
@@ -627,17 +633,13 @@ function savedViewState(id) {
   return state?.view === id ? state : null;
 }
 
-function restoreViewState(state) {
-  selection = state.selection;
-  cellRanges = state.cellRanges;
-  sensitivitySelection = state.sensitivitySelection;
-  checksExpanded = state.checksExpanded;
-  openChecks = new Set(state.openChecks ?? []);
-  calculationTrail = state.calculationTrail;
+function restoreViewState(saved) {
+  viewState = saved.state ? structuredClone(saved.state) : defaultViewState();
+  viewState.openChecks = new Set(viewState.openChecks ?? []);
 }
 
 function revealViewState(state) {
-  if (selection !== null) focusGridCell();
+  if (viewState.selection !== null) focusGridCell();
   else el('sensitivities').querySelector('td.selected')?.focus({ preventScroll: true });
   const viewport = document.querySelector('.table-viewport');
   viewport.scrollLeft = state.scroll.left;
@@ -661,8 +663,11 @@ function render() {
     `<th class="${columnStyle(column)}" data-column="${index}" style="width: ${widths[index]}" ` +
     `title="${escapeHtml(column.label)}">${escapeHtml(column.label)}</th>`).join('');
   head.firstElementChild.appendChild(labelResizer);
+  gridNodes.clear();
+  gridNodes.set(gridKey(COLUMN_AXIS, -1), head.firstElementChild);
   head.querySelectorAll('[data-column]').forEach((cell) => {
     const periodIndex = Number(cell.dataset.column);
+    gridNodes.set(gridKey(COLUMN_AXIS, periodIndex), cell);
     cell.tabIndex = -1;
     cell.setAttribute('aria-label', `${columns[periodIndex].label} overview`);
     cell.addEventListener('pointerdown', (event) => beginCellRangePointer(event, COLUMN_AXIS, periodIndex));
@@ -704,6 +709,7 @@ function render() {
     tr.style.setProperty('--indent-level', row.indent ?? 0);
     tr.querySelectorAll('[data-column]').forEach((cell) => {
       const periodIndex = Number(cell.dataset.column);
+      gridNodes.set(gridKey(index, periodIndex), cell);
       cell.tabIndex = -1;
       const isRowLabel = periodIndex === -1;
       if (!isRowLabel) cellNodes.set(coordinateKey(row.cells[periodIndex].line, row.cells[periodIndex].column), cell);
@@ -795,8 +801,8 @@ function renderSensitivities() {
     tableScroll.appendChild(table);
     section.appendChild(tableScroll);
     bindSensitivityLinks(section);
-    if (sensitivitySelection?.name === sensitivity.name) {
-      updateSensitivitySelection(section, sensitivitySelection.row, sensitivitySelection.column);
+    if (viewState.sensitivitySelection?.name === sensitivity.name) {
+      updateSensitivitySelection(section, viewState.sensitivitySelection.row, viewState.sensitivitySelection.column);
     }
     container.appendChild(section);
   }
@@ -821,10 +827,10 @@ function sensitivityHeadingHtml(sensitivity) {
 }
 
 function selectSensitivityCell(sensitivity, section, row, column, focus = true) {
-  selection = null;
-  cellRanges = [];
-  checksExpanded = false;
-  sensitivitySelection = { name: sensitivity.name, row, column };
+  viewState.selection = null;
+  viewState.cellRanges = [];
+  viewState.checksExpanded = false;
+  viewState.sensitivitySelection = { name: sensitivity.name, row, column };
   clearSelection();
   updateSensitivitySelection(section, row, column);
   if (focus) {
@@ -882,7 +888,7 @@ function handleSensitivityKey(event, sensitivity, section, row, column) {
     return;
   } else if (event.key === 'Escape') {
     event.preventDefault();
-    sensitivitySelection = null;
+    viewState.sensitivitySelection = null;
     renderSensitivities();
     renderPanel();
     el('sensitivities').querySelector('td[data-row="0"][data-column="0"]')?.focus();
@@ -903,20 +909,18 @@ function checkKey(check) {
 function renderChecks() {
   const checks = payload.checks ?? [];
   if (!checks.length) {
-    el('checks').classList.remove('expanded');
     el('checks').innerHTML = '';
     return;
   }
   const failed = checks.filter((c) => !c.passed).length;
-  if (checksExpanded === null) checksExpanded = failed > 0;
+  if (viewState.checksExpanded === null) viewState.checksExpanded = failed > 0;
   const container = el('checks');
-  container.classList.toggle('expanded', checksExpanded);
-  container.innerHTML = `<details${checksExpanded ? ' open' : ''}>
+  container.innerHTML = `<details${viewState.checksExpanded ? ' open' : ''}>
     <summary>
       <span>Checks</span>
       <span class="check-count ${failed ? 'fail' : 'pass'}">${checks.length - failed}/${checks.length} pass</span>
     </summary>
-    <div class="check-list">${checks.map((c) => `<details class="check ${c.passed ? 'pass' : 'fail'}"${openChecks.has(checkKey(c)) ? ' open' : ''}>
+    <div class="check-list">${checks.map((c) => `<details class="check ${c.passed ? 'pass' : 'fail'}"${viewState.openChecks.has(checkKey(c)) ? ' open' : ''}>
       <summary>
         <span class="badge">${c.passed ? 'PASS' : 'FAIL'}</span>
         <span>${escapeHtml(c.name)}</span>
@@ -931,17 +935,16 @@ function renderChecks() {
   </details>`;
   container.querySelector(':scope > details').addEventListener('toggle', (event) => {
     if (!event.currentTarget.isConnected) return;
-    checksExpanded = event.currentTarget.open;
-    container.classList.toggle('expanded', checksExpanded);
-    if (!checksExpanded || selection === null) return;
+    viewState.checksExpanded = event.currentTarget.open;
+    if (!viewState.checksExpanded || viewState.selection === null) return;
     clearSelection();
   });
   container.querySelectorAll('.check').forEach((details, index) => {
     const key = checkKey(checks[index]);
     details.addEventListener('toggle', (event) => {
       if (!event.currentTarget.isConnected) return;
-      if (event.currentTarget.open) openChecks.add(key);
-      else openChecks.delete(key);
+      if (event.currentTarget.open) viewState.openChecks.add(key);
+      else viewState.openChecks.delete(key);
     });
   });
 }
@@ -978,6 +981,7 @@ function formatOperators(text) {
 
 // Held by index, not name: a view may list the same line twice.
 function selectedEntry() {
+  const { selection } = viewState;
   if (selection === null) return null;
   return selection.index === COLUMN_AXIS
     ? (payload.columns ?? [])[selection.periodIndex] ?? null
@@ -985,6 +989,7 @@ function selectedEntry() {
 }
 
 function selectedCell() {
+  const { selection } = viewState;
   if (selection === null || selection.index === COLUMN_AXIS || selection.periodIndex === null) return null;
   return (payload.rows ?? [])[selection.index]?.cells?.[selection.periodIndex] ?? null;
 }
@@ -1064,17 +1069,15 @@ function locate(line, column) {
 }
 
 function selectInGrid(nextSelection, ranges) {
-  const checks = el('checks');
-  const openChecks = checks.querySelector(':scope > details[open]');
-  if (openChecks) openChecks.open = false;
-  checks.classList.remove('expanded');
-  checksExpanded = false;
-  if (sensitivitySelection) {
-    sensitivitySelection = null;
+  const openDetails = el('checks').querySelector(':scope > details[open]');
+  if (openDetails) openDetails.open = false;
+  viewState.checksExpanded = false;
+  if (viewState.sensitivitySelection) {
+    viewState.sensitivitySelection = null;
     renderSensitivities();
   }
-  selection = nextSelection;
-  cellRanges = ranges;
+  viewState.selection = nextSelection;
+  viewState.cellRanges = ranges;
 }
 
 function selectRow(index, focus = false) {
@@ -1120,7 +1123,7 @@ function regionBounds(region) {
 }
 
 function cellRangeBounds() {
-  return cellRanges.map(regionBounds).filter(Boolean);
+  return viewState.cellRanges.map(regionBounds).filter(Boolean);
 }
 
 // Header and spacer rows carry no cells, so a range skips them.
@@ -1163,18 +1166,15 @@ function isMultiCellRange() {
 }
 
 function lastCellRegion() {
-  return cellRanges[cellRanges.length - 1] ?? null;
+  return viewState.cellRanges[viewState.cellRanges.length - 1] ?? null;
 }
 
 function gridCellNode(index, periodIndex) {
-  if (index === COLUMN_AXIS) {
-    const head = el('head');
-    return periodIndex === -1 ? head.firstElementChild : head.querySelector(`[data-column="${periodIndex}"]`);
-  }
-  return el('body').querySelector(`tr[data-row-index="${index}"] [data-column="${periodIndex}"]`);
+  return gridNodes.get(gridKey(index, periodIndex)) ?? null;
 }
 
 function syncGridSelection() {
+  const { selection } = viewState;
   const head = el('head');
   const body = el('body');
   [head, body].forEach((section) => {
@@ -1193,10 +1193,11 @@ function syncGridSelection() {
   const keys = new Set(coordinates.map(({ index, periodIndex }) => gridKey(index, periodIndex)));
   const rowOrder = [COLUMN_AXIS, ...(payload?.rows ?? []).map((row, index) => (row.cells?.length ? index : null))
     .filter((index) => index !== null)];
+  const rowPositions = new Map(rowOrder.map((row, position) => [row, position]));
   for (const { index, periodIndex } of coordinates) {
     const cell = gridCellNode(index, periodIndex);
     if (!cell) continue;
-    const position = rowOrder.indexOf(index);
+    const position = rowPositions.get(index) ?? -1;
     const above = rowOrder[position - 1];
     const below = rowOrder[position + 1];
     cell.classList.add('range-selected');
@@ -1224,7 +1225,7 @@ function syncGridSelection() {
   });
 
   if (selection?.index === COLUMN_AXIS) {
-    head.querySelector(`[data-column="${selection.periodIndex}"]`)?.classList.add('selected');
+    gridCellNode(COLUMN_AXIS, selection.periodIndex)?.classList.add('selected');
     body.querySelectorAll(`td[data-column="${selection.periodIndex}"]`)
       .forEach((cell) => cell.classList.add('selected-column'));
   } else if (selection?.periodIndex === null) {
@@ -1232,12 +1233,11 @@ function syncGridSelection() {
   } else if (validCellCoordinate(selection)) {
     const tr = body.querySelector(`tr[data-row-index="${selection.index}"]`);
     tr?.classList.add('cell-selected');
-    tr?.querySelector(`td[data-column="${selection.periodIndex}"]`)?.classList.add('selected-cell');
-    head.querySelector(`[data-column="${selection.periodIndex}"]`)?.classList.add('cell-selected');
+    gridCellNode(selection.index, selection.periodIndex)?.classList.add('selected-cell');
+    gridCellNode(COLUMN_AXIS, selection.periodIndex)?.classList.add('cell-selected');
   }
 
-  const active = selection?.index === COLUMN_AXIS ? head : body.querySelector(`tr[data-row-index="${selection?.index}"]`);
-  const activeCell = active?.querySelector(`[data-column="${selection?.periodIndex ?? -1}"]`);
+  const activeCell = selection ? gridCellNode(selection.index, selection.periodIndex ?? -1) : null;
   if (activeCell) {
     activeCell.tabIndex = 0;
     activeCell.setAttribute('aria-selected', 'true');
@@ -1257,9 +1257,9 @@ function extendCellRange(index, periodIndex, focus = false) {
   const previous = lastCellRegion();
   const anchor = validCellCoordinate(previous?.anchor)
     ? previous.anchor
-    : validCellCoordinate(selection) ? selection : { index, periodIndex };
+    : validCellCoordinate(viewState.selection) ? viewState.selection : { index, periodIndex };
   selectInGrid(selectionFor({ index, periodIndex }),
-    [...cellRanges.slice(0, -1), { anchor: { ...anchor }, active: { index, periodIndex } }]);
+    [...viewState.cellRanges.slice(0, -1), { anchor: { ...anchor }, active: { index, periodIndex } }]);
   refreshGridSelection();
   if (focus) focusGridCell(index, periodIndex);
 }
@@ -1280,7 +1280,7 @@ function beginCellRangePointer(event, index, periodIndex) {
   enterInspector();
   const cell = event.currentTarget;
   const additive = event.ctrlKey || event.metaKey;
-  const previous = cellRanges.filter(validCellRegion)
+  const previous = viewState.cellRanges.filter(validCellRegion)
     .map((region) => ({ anchor: { ...region.anchor }, active: { ...region.active } }));
   const base = additive ? previous : event.shiftKey ? previous.slice(0, -1) : [];
   const anchor = event.shiftKey && !additive && validCellCoordinate(lastCellRegion()?.anchor)
@@ -1321,8 +1321,8 @@ function beginCellRangePointer(event, index, periodIndex) {
       || coordinate.periodIndex !== region.active.periodIndex)) {
       region.active = coordinate;
       if (committed) {
-        selection = selectionFor(coordinate);
-        cellRanges = [...base, region];
+        viewState.selection = selectionFor(coordinate);
+        viewState.cellRanges = [...base, region];
         syncGridSelection();
       } else {
         commit();
@@ -1374,8 +1374,8 @@ function leaveInspector() {
 }
 
 function clearSelection() {
-  selection = null;
-  cellRanges = [];
+  viewState.selection = null;
+  viewState.cellRanges = [];
   refreshGridSelection();
 }
 
@@ -1385,9 +1385,8 @@ function refreshGridSelection() {
   highlightTableCalculation();
 }
 
-function focusGridCell(index = selection?.index, periodIndex = selection?.periodIndex ?? null) {
-  const row = index === COLUMN_AXIS ? el('head') : el('body').querySelector(`tr[data-row-index="${index}"]`);
-  const cell = row?.querySelector(`[data-column="${periodIndex ?? -1}"]`);
+function focusGridCell(index = viewState.selection?.index, periodIndex = viewState.selection?.periodIndex ?? null) {
+  const cell = gridCellNode(index, periodIndex ?? -1);
   if (!cell) return;
   cell.focus({ preventScroll: true });
   scrollGridCellIntoView(cell);
@@ -1435,7 +1434,7 @@ function scrollGridCellIntoView(cell) {
 function moveSelection(index, direction, edge = false) {
   const next = verticalCellTarget(index, direction, edge);
   if (next === index) return;
-  const periodIndex = selection?.periodIndex ?? null;
+  const periodIndex = viewState.selection?.periodIndex ?? null;
   if (next === COLUMN_AXIS) {
     // Leaving the table upward lands on the column header.
     if (periodIndex !== null) selectColumn(periodIndex, true);
@@ -1448,7 +1447,7 @@ function moveSelection(index, direction, edge = false) {
 }
 
 function movePeriod(index, direction) {
-  const current = selection?.index === index ? selection.periodIndex ?? -1 : -1;
+  const current = viewState.selection?.index === index ? viewState.selection.periodIndex ?? -1 : -1;
   const next = Math.max(-1, Math.min(payload.columns.length - 1, current + direction));
   if (next === current) return;
   if (next === -1) selectRow(index, true);
@@ -1535,7 +1534,7 @@ function handleGridKey(event, index, periodIndex) {
   const key = event.key;
   if (extendCellRangeByKey(event, index, periodIndex)) return;
   const syncSelection = () => {
-    if (selection?.index === index && (selection.periodIndex ?? -1) === periodIndex) return;
+    if (viewState.selection?.index === index && (viewState.selection.periodIndex ?? -1) === periodIndex) return;
     if (periodIndex === -1) selectRow(index, true);
     else inspectCell(index, periodIndex);
   };
@@ -1617,8 +1616,8 @@ function handleHeaderKey(event, periodIndex) {
 }
 
 function selectedSensitivity() {
-  if (sensitivitySelection === null) return null;
-  return (payload.sensitivities ?? []).find((item) => item.name === sensitivitySelection.name) ?? null;
+  if (viewState.sensitivitySelection === null) return null;
+  return (payload.sensitivities ?? []).find((item) => item.name === viewState.sensitivitySelection.name) ?? null;
 }
 
 function sensitivityChartSeries(sensitivity, row, column) {
@@ -1698,7 +1697,7 @@ function renderSensitivityChart(series, outputLabel, domain) {
 }
 
 function renderSensitivityPanel(panel, sensitivity) {
-  const { row, column } = sensitivitySelection;
+  const { row, column } = viewState.sensitivitySelection;
   const cell = sensitivity.cells[row][column];
   const assumptions = sensitivity.inputs.map((input, index) => {
     const displayIndex = index === 0 ? column : row;
@@ -1757,9 +1756,9 @@ function selectedRangeTsv(exact = false) {
 // A selected line or period header has no cell range, so its label stands in.
 function selectedCopyText() {
   if (selectedCoordinates().length) return selectedRangeTsv();
-  if (selection === null) return null;
-  const periodIndex = selection.index === COLUMN_AXIS ? selection.periodIndex : -1;
-  return cleanClipboardValue(coordinateText({ index: selection.index, periodIndex }));
+  if (viewState.selection === null) return null;
+  const periodIndex = viewState.selection.index === COLUMN_AXIS ? viewState.selection.periodIndex : -1;
+  return cleanClipboardValue(coordinateText({ index: viewState.selection.index, periodIndex }));
 }
 
 function handleGridCopy(event) {
@@ -1862,7 +1861,7 @@ function renderPanel() {
   const sensitivity = selectedSensitivity();
   const rangeSelected = isMultiCellRange();
   const inspector = panel.closest('.inspector');
-  const showInspector = Boolean(entry || sensitivity || rangeSelected) && !checksExpanded;
+  const showInspector = Boolean(entry || sensitivity || rangeSelected) && !viewState.checksExpanded;
   inspector.hidden = !showInspector;
   document.querySelector('.layout').classList.toggle('inspector-hidden', !showInspector);
   el('inspector-back-label').textContent = viewTitle(activeView) ?? 'Table';
@@ -1879,6 +1878,7 @@ function renderPanel() {
     return;
   }
 
+  const { selection } = viewState;
   const cell = selectedCell();
   const alongColumn = selection.index === COLUMN_AXIS;
   const headers = alongColumn
@@ -2158,8 +2158,8 @@ function calculationTokenTitle(token) {
 // The trail belongs to one cell; selecting another starts again at its own calculation.
 function calculationSteps(cell) {
   const key = coordinateKey(cell.line, cell.column);
-  if (calculationTrail.cell !== key) calculationTrail = { cell: key, steps: [] };
-  return calculationTrail.steps;
+  if (viewState.calculationTrail.cell !== key) viewState.calculationTrail = { cell: key, steps: [] };
+  return viewState.calculationTrail.steps;
 }
 
 function currentCalculation(cell) {
@@ -2257,17 +2257,9 @@ function highlightTableCalculation() {
     cell.classList.remove('calculation-source', 'emphasized');
     delete cell.dataset.calcColor;
   });
-  el('body').querySelectorAll('.calculation-result').forEach((cell) => {
-    cell.classList.remove('calculation-result');
-    cell.removeAttribute('title');
-  });
 
   const selected = selectedCell();
-  if (!selected || selected.kind !== 'formula' || !selected.calculation) return;
-
-  cellNodes.get(coordinateKey(selected.line, selected.column))?.classList.add('calculation-result');
-
-  if (!calculationHighlights) return;
+  if (!calculationHighlights || !selected || selected.kind !== 'formula' || !selected.calculation) return;
 
   for (const [key, color] of calculationReferences(currentCalculation(selected)?.calculation)) {
     const cell = cellNodes.get(key);
@@ -2405,7 +2397,7 @@ function renderChart(entry, cells, headers) {
   }).join('');
   const labels = points.map((point) => `<span>${escapeHtml(point.label)}</span>`).join('');
 
-  return `<div class="trend"><h3>Trend</h3><figure class="trend-chart ${entry.kind}">
+  return `<div class="trend"><h3>Trend</h3><figure class="trend-chart">
     <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(entry.label)} trend by period">
       <line x1="16" y1="${baseline}" x2="${width - 16}" y2="${baseline}"></line>
       ${bars}
@@ -2616,7 +2608,7 @@ function updateExpandAllButton() {
 }
 
 function focusTable() {
-  if (selection !== null) focusGridCell();
+  if (viewState.selection !== null) focusGridCell();
   else el('body').querySelector('[tabindex="0"]')?.focus();
 }
 
@@ -2628,7 +2620,7 @@ function shouldRestoreGridFocus(target, hasSelection, dialogOpen) {
 }
 
 function restoreGridFocusAfterClick(event) {
-  if (!shouldRestoreGridFocus(event.target, selection !== null,
+  if (!shouldRestoreGridFocus(event.target, viewState.selection !== null,
     document.querySelector('dialog[open]') !== null)) return;
   focusGridCell();
 }

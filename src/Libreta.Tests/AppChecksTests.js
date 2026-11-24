@@ -82,13 +82,13 @@ test('a toggle event on a detached checks element does not clear the current sel
   app.clearSelection = () => { cleared = true; };
   app.eval(`
     payload = { checks: [{ name: 'gross_profit', formula: 'revenue - gross_profit', periods: ['2024'], deltas: ['1'], passed: false }] };
-    selection = { index: 0, periodIndex: 0 };
-    checksExpanded = false;
+    viewState.selection = { index: 0, periodIndex: 0 };
+    viewState.checksExpanded = false;
   `);
 
   app.renderChecks();
   fireOuterToggle(true, false);
 
   assert.equal(cleared, false);
-  assert.equal(app.eval('checksExpanded'), false);
+  assert.equal(app.eval('viewState.checksExpanded'), false);
 });
