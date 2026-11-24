@@ -505,15 +505,26 @@ function expandAncestors(id) {
   if (!id) return;
   const views = catalog?.views ?? [];
   const view = views.find((candidate) => candidate.id === id) ?? { id };
-  for (const key of treeKeys(view, new Set(views.map((candidate) => candidate.id)))) branchStates.set(key, true);
+  for (const key of treeKeys(view, catalogIds())) branchStates.set(key, true);
 }
 
 // A line no table shows has a view of its own, which the server builds on request and an export carries.
 const LINE_VIEW = 'line:';
 
+let catalogViewIds = new Set();
+let catalogViewIdsSource = null;
+
+function catalogIds() {
+  if (catalogViewIdsSource !== catalog) {
+    catalogViewIdsSource = catalog;
+    catalogViewIds = new Set((catalog?.views ?? []).map((view) => view.id));
+  }
+  return catalogViewIds;
+}
+
 function knownView(id) {
   if (id?.startsWith(LINE_VIEW)) return !snapshot || Boolean(snapshot.views[id]);
-  return catalog?.views.some((view) => view.id === id) ?? false;
+  return catalogIds().has(id);
 }
 
 function viewTitle(id) {
@@ -1663,37 +1674,87 @@ function chartScale([minimum, maximum], top, bottom) {
   return (value) => top + ((maximum - value) / (maximum - minimum)) * (bottom - top);
 }
 
-function renderSensitivityChart(series, outputLabel, domain) {
-  const width = 360;
-  const y = chartScale(domain, 8, 126);
+function renderBarChart({
+  points,
+  domain,
+  width,
+  height,
+  top,
+  bottom,
+  inset = 0,
+  maxBarWidth,
+  barRatio,
+  minBarHeight = 1,
+  selectedIndex = -1,
+  showMissing = false,
+  svgLabels = false,
+  tooltipAttribute = null,
+  barClass = '',
+  baselineClass = '',
+  preserveAspectRatio = null,
+  ariaLabel
+}) {
+  const y = chartScale(domain, top, bottom);
   const baseline = y(0);
-  const band = width / Math.max(series.values.length, 1);
-  const barWidth = Math.min(34, band * .62);
-  const bars = series.values.map((value, index) => {
-    const center = band * (index + .5);
-    const label = escapeHtml(series.labels[index]);
-    if (value === null) {
-      const selected = index === series.selectedIndex ? ' selected' : '';
+  const band = (width - inset * 2) / Math.max(points.length, 1);
+  const barWidth = Math.min(maxBarWidth, band * barRatio);
+  const bars = points.map((point, index) => {
+    const center = inset + band * (index + .5);
+    const label = escapeHtml(point.label);
+    const selected = index === selectedIndex ? ' selected' : '';
+    if (!Number.isFinite(point.value)) {
+      if (!showMissing) return '';
       return `<g class="sensitivity-chart-missing${selected}"><title>${label}: unavailable</title>` +
         `<line x1="${center - 5}" y1="${baseline - 5}" x2="${center + 5}" y2="${baseline + 5}"></line>` +
         `<line x1="${center + 5}" y1="${baseline - 5}" x2="${center - 5}" y2="${baseline + 5}"></line></g>`;
     }
-    const valueY = y(value);
-    const top = Math.min(valueY, baseline);
-    const height = Math.max(1, Math.abs(baseline - valueY));
-    const selected = index === series.selectedIndex ? ' selected' : '';
-    return `<rect class="sensitivity-chart-bar${selected}" x="${center - barWidth / 2}" y="${top}" ` +
-      `width="${barWidth}" height="${height}" rx="3"><title>${label}: ` +
-      `${escapeHtml(series.displays[index])}</title></rect>`;
+    const valueY = y(point.value);
+    const barTop = Math.min(valueY, baseline);
+    const barHeight = Math.max(minBarHeight, Math.abs(baseline - valueY));
+    const tooltip = `${label}: ${escapeHtml(point.display)}`;
+    const classAttr = barClass ? ` class="${barClass}${selected}"` : '';
+    const rect = `<rect${classAttr} x="${center - barWidth / 2}" y="${barTop}" width="${barWidth}" ` +
+      `height="${barHeight}" rx="3">`;
+    if (tooltipAttribute) {
+      return `<g ${tooltipAttribute}="${tooltip}">${rect}</rect></g>`;
+    }
+    return `${rect}<title>${tooltip}</title></rect>`;
   }).join('');
-  const labels = series.labels.map((label, index) =>
-    `<text x="${band * (index + .5)}" y="148">${escapeHtml(label)}</text>`).join('');
-  const chartLabel = `${outputLabel} by ${series.axisLabel}, ${series.title}`;
+  const labels = svgLabels
+    ? `<g class="sensitivity-chart-labels">${points.map((point, index) =>
+        `<text x="${inset + band * (index + .5)}" y="${height - 10}">${escapeHtml(point.label)}</text>`).join('')}</g>`
+    : '';
+  const aspect = preserveAspectRatio ? ` preserveAspectRatio="${preserveAspectRatio}"` : '';
+  const baseClass = baselineClass ? ` class="${baselineClass}"` : '';
+  return `<svg viewBox="0 0 ${width} ${height}"${aspect} role="img" aria-label="${escapeHtml(ariaLabel)}">` +
+    `<line${baseClass} x1="${inset}" y1="${baseline}" x2="${width - inset}" y2="${baseline}"></line>` +
+    `${bars}${labels}</svg>`;
+}
+
+function renderSensitivityChart(series, outputLabel, domain) {
+  const points = series.values.map((value, index) => ({
+    label: series.labels[index],
+    display: series.displays[index],
+    value: value === null ? NaN : value
+  }));
+  const svg = renderBarChart({
+    points,
+    domain,
+    width: 360,
+    height: 158,
+    top: 8,
+    bottom: 126,
+    maxBarWidth: 34,
+    barRatio: .62,
+    selectedIndex: series.selectedIndex,
+    showMissing: true,
+    svgLabels: true,
+    barClass: 'sensitivity-chart-bar',
+    baselineClass: 'sensitivity-chart-baseline',
+    ariaLabel: `${outputLabel} by ${series.axisLabel}, ${series.title}`
+  });
   return `<figure class="sensitivity-chart"><figcaption><strong>${escapeHtml(series.axisLabel)}</strong>` +
-    `<span>${escapeHtml(series.title)}</span></figcaption>` +
-    `<svg viewBox="0 0 ${width} 158" role="img" aria-label="${escapeHtml(chartLabel)}">` +
-    `<line class="sensitivity-chart-baseline" x1="0" y1="${baseline}" x2="${width}" y2="${baseline}"></line>` +
-    `${bars}<g class="sensitivity-chart-labels">${labels}</g></svg></figure>`;
+    `<span>${escapeHtml(series.title)}</span></figcaption>${svg}</figure>`;
 }
 
 function renderSensitivityPanel(panel, sensitivity) {
@@ -2370,39 +2431,33 @@ function renderChart(entry, cells, headers) {
   const periodColumns = payload.periodColumns ?? [];
   const points = cells
     .map((cell, index) => ({ cell, label: headers[index]?.label ?? cell.column }))
-    .filter((entry) => periodColumns.includes(entry.cell.column))
-    .map((entry) => ({
-      label: entry.label,
-      display: entry.cell.display,
-      value: entry.cell.exact == null ? NaN : Number(entry.cell.exact)
+    .filter((item) => periodColumns.includes(item.cell.column))
+    .map((item) => ({
+      label: item.label,
+      display: item.cell.display,
+      value: item.cell.exact == null ? NaN : Number(item.cell.exact)
     }));
   const values = points.filter((point) => Number.isFinite(point.value));
   if (values.length < 2) return '';
 
-  const width = 320;
-  const height = 154;
-  const y = chartScale(chartDomain(values.map((point) => point.value)), 12, 146);
-  const baseline = y(0);
-  const slot = (width - 32) / points.length;
-  const barWidth = Math.min(38, slot * .52);
-
-  const bars = points.map((point, index) => {
-    if (!Number.isFinite(point.value)) return '';
-    const barY = point.value >= 0 ? y(point.value) : baseline;
-    const barHeight = Math.max(2, Math.abs(y(point.value) - baseline));
-    const barX = 16 + index * slot + (slot - barWidth) / 2;
-    return `<g data-tooltip="${escapeHtml(point.label)}: ${escapeHtml(point.display)}">
-      <rect x="${barX}" y="${barY}" width="${barWidth}" height="${barHeight}" rx="3"></rect>
-    </g>`;
-  }).join('');
+  const svg = renderBarChart({
+    points,
+    domain: chartDomain(values.map((point) => point.value)),
+    width: 320,
+    height: 154,
+    top: 12,
+    bottom: 146,
+    inset: 16,
+    maxBarWidth: 38,
+    barRatio: .52,
+    minBarHeight: 2,
+    tooltipAttribute: 'data-tooltip',
+    preserveAspectRatio: 'none',
+    ariaLabel: `${entry.label} trend by period`
+  });
   const labels = points.map((point) => `<span>${escapeHtml(point.label)}</span>`).join('');
-
-  return `<div class="trend"><h3>Trend</h3><figure class="trend-chart">
-    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(entry.label)} trend by period">
-      <line x1="16" y1="${baseline}" x2="${width - 16}" y2="${baseline}"></line>
-      ${bars}
-    </svg><div class="trend-axis" style="--trend-columns: ${points.length}">${labels}</div>
-  </figure></div>`;
+  return `<div class="trend"><h3>Trend</h3><figure class="trend-chart">` +
+    `${svg}<div class="trend-axis" style="--trend-columns: ${points.length}">${labels}</div></figure></div>`;
 }
 
 const TOOLTIP_DELAY = 200;

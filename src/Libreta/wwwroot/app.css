@@ -1642,11 +1642,15 @@ body.selecting-cells {
   max-width: 24rem;
 }
 
-.trend-chart svg {
+.trend-chart svg,
+.sensitivity-chart svg {
   display: block;
   width: 100%;
-  height: auto;
   overflow: visible;
+}
+
+.trend-chart svg {
+  height: auto;
 }
 
 .layout.inspector-bottom .trend-chart svg {
@@ -2051,10 +2055,7 @@ body.selecting-cells {
 }
 
 .sensitivity-chart svg {
-  display: block;
-  width: 100%;
   max-height: 11rem;
-  overflow: visible;
 }
 
 .sensitivity-chart-baseline {
