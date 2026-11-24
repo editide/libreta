@@ -9,7 +9,6 @@ public class FactTableReaderTests
   private const string Plain = """
     table:
       title: Net bookings
-      fiscal_year_end: 03-31
     source:
       url: https://example.com/10-q.htm
       image: 2021-12-31.png
@@ -19,7 +18,6 @@ public class FactTableReaderTests
         Page: 12
     defaults:
       units: millions
-      currency: USD
       printed: negated
       sign: contra
       missing: zero
@@ -167,13 +165,13 @@ public class FactTableReaderTests
     {
       return "null";
     }
-    string table = file.Table is null ? "null" : $"{{{Text(file.Table.Title)} {Text(file.Table.FiscalYearEnd)}}}";
+    string table = file.Table is null ? "null" : $"{{{Text(file.Table.Title)}}}";
     string source = file.Source is null
       ? "null"
       : $"{{{Text(file.Source.Url)} {Text(file.Source.Image)} {Text(file.Source.Note)} {Map(file.Source.Details)}}}";
     string defaults = file.Defaults is null
       ? "null"
-      : $"{{{Text(file.Defaults.Units)} {Text(file.Defaults.Currency)} {Text(file.Defaults.Printed)} " +
+      : $"{{{Text(file.Defaults.Units)} {Text(file.Defaults.Printed)} " +
         $"{Text(file.Defaults.Sign)} {Text(file.Defaults.Missing)}}}";
     string lines = file.LineItems is null
       ? "null"

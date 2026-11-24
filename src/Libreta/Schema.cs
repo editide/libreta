@@ -6,8 +6,6 @@ public class BookFile
   public string ShortName { get; set; } = "";
   public string Description { get; set; } = "";
   public string Units { get; set; } = "";
-  public string Currency { get; set; } = "";
-  public string FiscalYearEnd { get; set; } = "";
   public Dictionary<string, string> Identifiers { get; set; } = new Dictionary<string, string>();
   public List<NavigationItem> Navigation { get; set; } = new List<NavigationItem>();
   public List<BookInclusion> Books { get; set; } = new List<BookInclusion>();
@@ -46,13 +44,11 @@ public class SourceInfo
 public class TableInfo
 {
   public string Title { get; set; } = "";
-  public string FiscalYearEnd { get; set; } = "";
 }
 
 public class Defaults
 {
   public string Units { get; set; } = "";
-  public string Currency { get; set; } = "";
   public string Printed { get; set; } = "as_is";
   public string Sign { get; set; } = "additive";
   public string Missing { get; set; } = "blank";

@@ -368,10 +368,58 @@ public class ViewAxisTests
 
     // Assert
     cells[0].Display.ShouldBe("(50)");
+    cells[0].Exact.ShouldBe("50");
+    cells[0].DisplayExact.ShouldBe("-50");
     cells[1].Contra.ShouldBeFalse();
     cells[1].Display.ShouldBe("25.0");
+    cells[1].DisplayExact.ShouldBeNull();
     cells[2].Contra.ShouldBeTrue();
     cells[2].Display.ShouldBe("(10)");
+    cells[2].Exact.ShouldBe("10");
+    cells[2].DisplayExact.ShouldBe("-10");
+  }
+
+  [Fact]
+  public void DisplayExactNegatesNonZeroContraValuesOnly()
+  {
+    // Arrange
+    using var fixture = new ViewFixture();
+    fixture.Write("book.yaml", "name: Test\nshort_name: TEST\nnavigation: [statement]\n");
+    fixture.Write("statement/facts/numbers.csv", "line_item,2024,2025,2026\nexpense,50,-20,0\nrevenue,100,100,100\n");
+    fixture.Write("statement/facts/numbers.yaml", """
+      table:
+        title: Numbers
+      defaults:
+        units: millions
+      line_items:
+        expense:
+          label: Expense
+          sign: contra
+        revenue:
+          label: Revenue
+      """);
+    fixture.Write("statement/view.yaml", """
+      title: Statement
+      columns: [2024, 2025, 2026]
+      rows:
+        - line: expense
+        - line: revenue
+      """);
+
+    // Act
+    ViewPayload payload = fixture.Payload("statement");
+    List<CellPayload> expense = payload.Rows[0].Cells;
+    List<CellPayload> revenue = payload.Rows[1].Cells;
+
+    // Assert
+    expense[0].Exact.ShouldBe("50");
+    expense[0].DisplayExact.ShouldBe("-50");
+    expense[1].Exact.ShouldBe("-20");
+    expense[1].DisplayExact.ShouldBe("20");
+    expense[2].Exact.ShouldBe("0");
+    expense[2].DisplayExact.ShouldBeNull();
+    revenue[0].Exact.ShouldBe("100");
+    revenue[0].DisplayExact.ShouldBeNull();
   }
 
   [Fact]

@@ -1,44 +1,28 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
-const vm = require('node:vm');
+const { loadApp } = require('./helpers/appHarness');
 
-const app = fs.readFileSync(path.join(__dirname, '..', 'Libreta', 'wwwroot', 'app.js'), 'utf8');
-const source = (name) => {
-  const found = app.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`))?.[0];
-  assert.ok(found, `app.js must define ${name}`);
-  return found;
-};
-
-const hasCells = vm.runInNewContext(`(${source('hasCells')})`);
-const selectTableCorner = source('selectTableCorner');
 const line = { cells: [{}, {}, {}] };
 const rows = [{ kind: 'header' }, line, line, line, { kind: 'spacer' }, line, line, { kind: 'spacer' }];
 
 function pageTarget(index, direction, pageHeight = 60) {
-  const context = { payload: { rows }, hasCells };
-  const pageCellTarget = vm.runInNewContext(`(${source('pageCellTarget')})`, context);
-  return pageCellTarget(index, direction, (row) => row * 20, pageHeight);
+  const app = loadApp();
+  app.set({ payload: { rows } });
+  return app.pageCellTarget(index, direction, (row) => row * 20, pageHeight);
 }
 
 function pressOnCell(key, index, periodIndex, modifiers = {}) {
   const calls = [];
-  const context = {
-    COLUMN_AXIS: -1,
-    payload: { columns: [{}, {}, {}], rows },
-    hasCells,
-    handleHeaderKey: () => calls.push(['header']),
-    extendCellRangeByKey: () => false,
-    selectRow: (row) => calls.push(['row', row]),
-    inspectCell: (row, period) => calls.push(['cell', row, period]),
-    pageSelection: (...args) => calls.push(['page', ...args]),
-    moveSelection: () => calls.push(['move']),
-    movePeriod: () => calls.push(['period'])
-  };
-  vm.runInNewContext(selectTableCorner, context);
-  const handleGridKey = vm.runInNewContext(`(${source('handleGridKey')})`, context);
-  handleGridKey({ key, ctrlKey: false, shiftKey: false, preventDefault() {}, ...modifiers }, index, periodIndex);
+  const app = loadApp();
+  app.set({ payload: { columns: [{}, {}, {}], rows } });
+  app.handleHeaderKey = () => calls.push(['header']);
+  app.extendCellRangeByKey = () => false;
+  app.selectRow = (row) => calls.push(['row', row]);
+  app.inspectCell = (row, period) => calls.push(['cell', row, period]);
+  app.pageSelection = (...args) => calls.push(['page', ...args]);
+  app.moveSelection = () => calls.push(['move']);
+  app.movePeriod = () => calls.push(['period']);
+  app.handleGridKey({ key, ctrlKey: false, shiftKey: false, preventDefault() {}, ...modifiers }, index, periodIndex);
   return calls;
 }
 
@@ -73,15 +57,12 @@ test('home and end without ctrl stay on the line', () => {
 });
 
 test('alt with an arrow is left to the browser for back and forward', () => {
-  // Arrange
   let prevented = false;
   const preventDefault = () => { prevented = true; };
 
-  // Act
   const calls = [...pressOnCell('ArrowLeft', 2, 1, { altKey: true, preventDefault }),
     ...pressOnCell('ArrowRight', -1, 1, { altKey: true, preventDefault })];
 
-  // Assert
   assert.deepEqual(calls, []);
   assert.equal(prevented, false);
 });
@@ -89,20 +70,25 @@ test('alt with an arrow is left to the browser for back and forward', () => {
 test('arrow keys move focus and refresh the inspector without rebuilding the table', () => {
   const focused = [];
   let panelUpdates = 0;
-  const context = {
-    COLUMN_AXIS: -1, payload: { columns: [{}, {}, {}], rows }, selection: { index: 1, periodIndex: 0 },
-    cellRanges: [], sensitivitySelection: null, checksExpanded: false,
-    render: () => assert.fail('moving focus rebuilt the table'),
-    el: () => ({ querySelector: () => null, classList: { remove() {} } }),
-    syncGridSelection() {}, highlightTableCalculation() {},
-    renderPanel() { panelUpdates++; },
-    focusGridCell() { focused.push([context.selection.index, context.selection.periodIndex]); }
+  const app = loadApp();
+  app.set({ payload: { columns: [{}, {}, {}], rows } });
+  Object.assign(app.eval('viewState'), {
+    selection: { index: 1, periodIndex: 0 },
+    cellRanges: [],
+    sensitivitySelection: null,
+    checksExpanded: false
+  });
+  app.render = () => assert.fail('moving focus rebuilt the table');
+  app.syncGridSelection = () => {};
+  app.highlightTableCalculation = () => {};
+  app.renderPanel = () => { panelUpdates++; };
+  app.focusGridCell = () => {
+    const current = app.eval('viewState.selection');
+    focused.push([current.index, current.periodIndex]);
   };
-  for (const name of ['handleGridKey', 'extendCellRangeByKey', 'movePeriod', 'moveSelection', 'verticalCellTarget',
-    'inspectCell', 'selectInGrid', 'refreshGridSelection']) vm.runInNewContext(source(name), context);
   for (const key of ['ArrowRight', 'ArrowDown']) {
-    const { index, periodIndex } = context.selection;
-    context.handleGridKey({ key, preventDefault() {} }, index, periodIndex);
+    const { index, periodIndex } = app.eval('viewState.selection');
+    app.handleGridKey({ key, preventDefault() {} }, index, periodIndex);
   }
   assert.deepEqual(focused, [[1, 1], [2, 1]]);
   assert.equal(panelUpdates, 2);

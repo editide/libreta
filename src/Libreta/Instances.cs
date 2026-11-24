@@ -58,16 +58,13 @@ public class InstanceRegistry
         TryDelete(path);
         continue;
       }
-      if (string.Equals(Normalize(instance.Root), wanted, PathComparison))
+      if (string.Equals(Normalize(instance.Root), wanted, BookStructure.PathComparison))
       {
         return instance;
       }
     }
     return null;
   }
-
-  private static StringComparison PathComparison =>
-    OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
   private string RecordPath(ServerInstance instance)
   {

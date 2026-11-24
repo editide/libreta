@@ -18,7 +18,7 @@ public sealed class BookStructure
 {
   private static readonly HashSet<string> BookProperties = new HashSet<string>
   {
-    "name", "short_name", "description", "units", "currency", "fiscal_year_end", "identifiers", "navigation", "books"
+    "name", "short_name", "description", "units", "identifiers", "navigation", "books"
   };
   /// <summary>How a formula names every included book at once instead of listing them.</summary>
   public const string InclusionWildcard = "books";
@@ -164,9 +164,7 @@ public sealed class BookStructure
         throw new InvalidDataException($"'{path}' inclusion '{inclusion.Id}' must use a relative path");
       }
       string childRoot = Path.GetFullPath(inclusion.Path, canonicalRoot);
-      string relative = Path.GetRelativePath(canonicalRoot, childRoot);
-      if (relative == ".." || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
-        Path.IsPathRooted(relative))
+      if (!Book.IsWithin(canonicalRoot, childRoot))
       {
         throw new InvalidDataException($"'{path}' inclusion '{inclusion.Id}' must stay inside the parent book");
       }
@@ -218,9 +216,7 @@ public sealed class BookStructure
       Name = Scalar(root, "name"),
       ShortName = Scalar(root, "short_name"),
       Description = Scalar(root, "description"),
-      Units = Scalar(root, "units"),
-      Currency = Scalar(root, "currency"),
-      FiscalYearEnd = Scalar(root, "fiscal_year_end")
+      Units = Scalar(root, "units")
     };
     if (file.Name.Length == 0)
     {
@@ -425,9 +421,13 @@ public sealed class BookStructure
       : "";
   }
 
-  internal static StringComparer PathComparer => OperatingSystem.IsWindows()
-    ? StringComparer.OrdinalIgnoreCase
-    : StringComparer.Ordinal;
+  internal static StringComparison PathComparison => OperatingSystem.IsLinux()
+    ? StringComparison.Ordinal
+    : StringComparison.OrdinalIgnoreCase;
+
+  internal static StringComparer PathComparer => OperatingSystem.IsLinux()
+    ? StringComparer.Ordinal
+    : StringComparer.OrdinalIgnoreCase;
 
 
 }

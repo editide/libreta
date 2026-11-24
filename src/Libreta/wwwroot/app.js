@@ -39,9 +39,7 @@ const sourceImageViewport = el('source-image-dialog').querySelector('.source-ima
 let payload = null;
 let catalog = null;
 let activeView = null;
-let selection = null;
-let cellRanges = [];
-let sensitivitySelection = null;
+let viewState = defaultViewState();
 let calculationHighlights = true;
 let formulaLabels = false;
 let pendingShortcut = null;
@@ -55,12 +53,9 @@ const phoneLayout =
   window.matchMedia('(pointer: coarse) and (max-width: 52rem), (pointer: coarse) and (max-height: 30rem)');
 // A phone has no room beside the table, so its navigation opens over it, and only when asked.
 let navigationVisible = !embedded && !compactLayout.matches && stored('navigationVisible') !== 'false';
-let checksExpanded = null;
 const requests = new RequestCoordinator();
 const branchStates = new Map();
 const formulaExpansions = new Map();
-// The values stepped into from the selected cell's calculation, outermost first.
-let calculationTrail = { cell: null, steps: [] };
 // Expansion ids join line and column with a NUL, which HTML attributes cannot carry, so buttons index into this.
 let calculationTargets = [];
 let revealedInitialView = false;
@@ -76,7 +71,21 @@ const COLUMN_AXIS = -1;
 const KIND_LABELS = { fact: 'Fact', formula: 'Calculated', book: 'Book', column: 'Column', metric: 'Line' };
 // Keyed by coordinate, not position, so highlighting survives a transpose.
 const cellNodes = new Map();
+// Keyed by gridKey(rowIndex, periodIndex), built during render so range selection stays linear.
+const gridNodes = new Map();
 let suppressCellClick = false;
+
+function defaultViewState() {
+  return {
+    selection: null,
+    cellRanges: [],
+    sensitivitySelection: null,
+    checksExpanded: null,
+    openChecks: new Set(),
+    // The values stepped into from the selected cell's calculation, outermost first.
+    calculationTrail: { cell: null, steps: [] }
+  };
+}
 
 // The middle column has a 36rem minimum, so every panel is capped against the window as well as a constant.
 const navWidth = createSize({
@@ -295,15 +304,17 @@ async function load() {
   }
   if (!requests.acceptView(request, activeView)) return false;
   payload = nextPayload;
-  const activeSensitivity = (payload.sensitivities ?? []).find((item) => item.name === sensitivitySelection?.name);
-  if (!activeSensitivity || !activeSensitivity.cells[sensitivitySelection.row]?.[sensitivitySelection.column]) {
-    sensitivitySelection = null;
+  const activeSensitivity = (payload.sensitivities ?? [])
+    .find((item) => item.name === viewState.sensitivitySelection?.name);
+  if (!activeSensitivity
+    || !activeSensitivity.cells[viewState.sensitivitySelection.row]?.[viewState.sensitivitySelection.column]) {
+    viewState.sensitivitySelection = null;
   }
-  if (selection?.periodIndex >= (payload.columns?.length ?? 0)) {
-    if (selection.index === COLUMN_AXIS) selection = null;
-    else selection.periodIndex = null;
+  if (viewState.selection?.periodIndex >= (payload.columns?.length ?? 0)) {
+    if (viewState.selection.index === COLUMN_AXIS) viewState.selection = null;
+    else viewState.selection.periodIndex = null;
   }
-  cellRanges = cellRanges.filter(validCellRegion);
+  viewState.cellRanges = viewState.cellRanges.filter(validCellRegion);
   render();
   return true;
 }
@@ -494,15 +505,26 @@ function expandAncestors(id) {
   if (!id) return;
   const views = catalog?.views ?? [];
   const view = views.find((candidate) => candidate.id === id) ?? { id };
-  for (const key of treeKeys(view, new Set(views.map((candidate) => candidate.id)))) branchStates.set(key, true);
+  for (const key of treeKeys(view, catalogIds())) branchStates.set(key, true);
 }
 
 // A line no table shows has a view of its own, which the server builds on request and an export carries.
 const LINE_VIEW = 'line:';
 
+let catalogViewIds = new Set();
+let catalogViewIdsSource = null;
+
+function catalogIds() {
+  if (catalogViewIdsSource !== catalog) {
+    catalogViewIdsSource = catalog;
+    catalogViewIds = new Set((catalog?.views ?? []).map((view) => view.id));
+  }
+  return catalogViewIds;
+}
+
 function knownView(id) {
   if (id?.startsWith(LINE_VIEW)) return !snapshot || Boolean(snapshot.views[id]);
-  return catalog?.views.some((view) => view.id === id) ?? false;
+  return catalogIds().has(id);
 }
 
 function viewTitle(id) {
@@ -543,10 +565,7 @@ async function followReference(view, line, column, replace = false) {
 
 // An export keeps the view in the fragment: browsers disagree on letting a file: URL change its query.
 function clearViewState() {
-  selection = null;
-  cellRanges = [];
-  sensitivitySelection = null;
-  checksExpanded = null;
+  viewState = defaultViewState();
 }
 
 function requestedView() {
@@ -605,10 +624,11 @@ function rememberHistoryEntry() {
   if (activeView === null || payload === null) return;
   const viewport = document.querySelector('.table-viewport');
   historyStates.delete(historyEntry);
-  historyStates.set(historyEntry, JSON.parse(JSON.stringify({
-    view: activeView, selection, cellRanges, sensitivitySelection, checksExpanded, calculationTrail,
+  historyStates.set(historyEntry, {
+    view: activeView,
+    state: { ...structuredClone(viewState), openChecks: [...viewState.openChecks] },
     scroll: { left: viewport.scrollLeft, top: viewport.scrollTop }
-  })));
+  });
   while (historyStates.size > 100) historyStates.delete(historyStates.keys().next().value);
 }
 
@@ -624,16 +644,13 @@ function savedViewState(id) {
   return state?.view === id ? state : null;
 }
 
-function restoreViewState(state) {
-  selection = state.selection;
-  cellRanges = state.cellRanges;
-  sensitivitySelection = state.sensitivitySelection;
-  checksExpanded = state.checksExpanded;
-  calculationTrail = state.calculationTrail;
+function restoreViewState(saved) {
+  viewState = saved.state ? structuredClone(saved.state) : defaultViewState();
+  viewState.openChecks = new Set(viewState.openChecks ?? []);
 }
 
 function revealViewState(state) {
-  if (selection !== null) focusGridCell();
+  if (viewState.selection !== null) focusGridCell();
   else el('sensitivities').querySelector('td.selected')?.focus({ preventScroll: true });
   const viewport = document.querySelector('.table-viewport');
   viewport.scrollLeft = state.scroll.left;
@@ -657,8 +674,11 @@ function render() {
     `<th class="${columnStyle(column)}" data-column="${index}" style="width: ${widths[index]}" ` +
     `title="${escapeHtml(column.label)}">${escapeHtml(column.label)}</th>`).join('');
   head.firstElementChild.appendChild(labelResizer);
+  gridNodes.clear();
+  gridNodes.set(gridKey(COLUMN_AXIS, -1), head.firstElementChild);
   head.querySelectorAll('[data-column]').forEach((cell) => {
     const periodIndex = Number(cell.dataset.column);
+    gridNodes.set(gridKey(COLUMN_AXIS, periodIndex), cell);
     cell.tabIndex = -1;
     cell.setAttribute('aria-label', `${columns[periodIndex].label} overview`);
     cell.addEventListener('pointerdown', (event) => beginCellRangePointer(event, COLUMN_AXIS, periodIndex));
@@ -700,6 +720,7 @@ function render() {
     tr.style.setProperty('--indent-level', row.indent ?? 0);
     tr.querySelectorAll('[data-column]').forEach((cell) => {
       const periodIndex = Number(cell.dataset.column);
+      gridNodes.set(gridKey(index, periodIndex), cell);
       cell.tabIndex = -1;
       const isRowLabel = periodIndex === -1;
       if (!isRowLabel) cellNodes.set(coordinateKey(row.cells[periodIndex].line, row.cells[periodIndex].column), cell);
@@ -791,8 +812,8 @@ function renderSensitivities() {
     tableScroll.appendChild(table);
     section.appendChild(tableScroll);
     bindSensitivityLinks(section);
-    if (sensitivitySelection?.name === sensitivity.name) {
-      updateSensitivitySelection(section, sensitivitySelection.row, sensitivitySelection.column);
+    if (viewState.sensitivitySelection?.name === sensitivity.name) {
+      updateSensitivitySelection(section, viewState.sensitivitySelection.row, viewState.sensitivitySelection.column);
     }
     container.appendChild(section);
   }
@@ -817,10 +838,10 @@ function sensitivityHeadingHtml(sensitivity) {
 }
 
 function selectSensitivityCell(sensitivity, section, row, column, focus = true) {
-  selection = null;
-  cellRanges = [];
-  checksExpanded = false;
-  sensitivitySelection = { name: sensitivity.name, row, column };
+  viewState.selection = null;
+  viewState.cellRanges = [];
+  viewState.checksExpanded = false;
+  viewState.sensitivitySelection = { name: sensitivity.name, row, column };
   clearSelection();
   updateSensitivitySelection(section, row, column);
   if (focus) {
@@ -878,7 +899,7 @@ function handleSensitivityKey(event, sensitivity, section, row, column) {
     return;
   } else if (event.key === 'Escape') {
     event.preventDefault();
-    sensitivitySelection = null;
+    viewState.sensitivitySelection = null;
     renderSensitivities();
     renderPanel();
     el('sensitivities').querySelector('td[data-row="0"][data-column="0"]')?.focus();
@@ -892,23 +913,25 @@ function handleSensitivityKey(event, sensitivity, section, row, column) {
   selectSensitivityCell(sensitivity, section, nextRow, nextColumn);
 }
 
+function checkKey(check) {
+  return `${check.name}\u0000${check.formula}`;
+}
+
 function renderChecks() {
   const checks = payload.checks ?? [];
   if (!checks.length) {
-    el('checks').classList.remove('expanded');
     el('checks').innerHTML = '';
     return;
   }
   const failed = checks.filter((c) => !c.passed).length;
-  if (checksExpanded === null) checksExpanded = failed > 0;
+  if (viewState.checksExpanded === null) viewState.checksExpanded = failed > 0;
   const container = el('checks');
-  container.classList.toggle('expanded', checksExpanded);
-  container.innerHTML = `<details${checksExpanded ? ' open' : ''}>
+  container.innerHTML = `<details${viewState.checksExpanded ? ' open' : ''}>
     <summary>
       <span>Checks</span>
       <span class="check-count ${failed ? 'fail' : 'pass'}">${checks.length - failed}/${checks.length} pass</span>
     </summary>
-    <div class="check-list">${checks.map((c) => `<details class="check ${c.passed ? 'pass' : 'fail'}">
+    <div class="check-list">${checks.map((c) => `<details class="check ${c.passed ? 'pass' : 'fail'}"${viewState.openChecks.has(checkKey(c)) ? ' open' : ''}>
       <summary>
         <span class="badge">${c.passed ? 'PASS' : 'FAIL'}</span>
         <span>${escapeHtml(c.name)}</span>
@@ -922,10 +945,18 @@ function renderChecks() {
     </details>`).join('')}</div>
   </details>`;
   container.querySelector(':scope > details').addEventListener('toggle', (event) => {
-    checksExpanded = event.currentTarget.open;
-    container.classList.toggle('expanded', checksExpanded);
-    if (!checksExpanded || selection === null) return;
+    if (!event.currentTarget.isConnected) return;
+    viewState.checksExpanded = event.currentTarget.open;
+    if (!viewState.checksExpanded || viewState.selection === null) return;
     clearSelection();
+  });
+  container.querySelectorAll('.check').forEach((details, index) => {
+    const key = checkKey(checks[index]);
+    details.addEventListener('toggle', (event) => {
+      if (!event.currentTarget.isConnected) return;
+      if (event.currentTarget.open) viewState.openChecks.add(key);
+      else viewState.openChecks.delete(key);
+    });
   });
 }
 
@@ -935,14 +966,25 @@ function formatCheckDeltas(check) {
 }
 
 function formatCheckEquation(check) {
+  const text = check.expression?.text ?? check.formula;
   const suffix = ` - ${check.name}`;
-  const equation = check.formula.endsWith(suffix)
-    ? `${check.formula.slice(0, -suffix.length)} = ${check.name}`
-    : `${check.formula} = 0`;
-  const labels = new Map([...(payload.rows ?? []), ...(payload.columns ?? [])]
-    .map((entry) => [entry.name, entry.label]));
-  return equation
-    .replace(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g, (name) => labels.get(name) ?? name.replaceAll('_', ' '))
+  const equation = text.endsWith(suffix)
+    ? `${text.slice(0, -suffix.length)} = ${check.name}`
+    : `${text} = 0`;
+  const references = check.expression?.references ?? [];
+  let rendered = '';
+  let end = 0;
+  for (const reference of references) {
+    rendered += formatOperators(equation.slice(end, reference.start));
+    end = reference.start + reference.length;
+    rendered += referenceLabel(equation.slice(reference.start, end), reference);
+  }
+  rendered += formatOperators(equation.slice(end));
+  return rendered;
+}
+
+function formatOperators(text) {
+  return text
     .replaceAll(' - ', ' − ')
     .replaceAll(' * ', ' × ')
     .replaceAll(' / ', ' ÷ ');
@@ -950,6 +992,7 @@ function formatCheckEquation(check) {
 
 // Held by index, not name: a view may list the same line twice.
 function selectedEntry() {
+  const { selection } = viewState;
   if (selection === null) return null;
   return selection.index === COLUMN_AXIS
     ? (payload.columns ?? [])[selection.periodIndex] ?? null
@@ -957,6 +1000,7 @@ function selectedEntry() {
 }
 
 function selectedCell() {
+  const { selection } = viewState;
   if (selection === null || selection.index === COLUMN_AXIS || selection.periodIndex === null) return null;
   return (payload.rows ?? [])[selection.index]?.cells?.[selection.periodIndex] ?? null;
 }
@@ -1036,17 +1080,15 @@ function locate(line, column) {
 }
 
 function selectInGrid(nextSelection, ranges) {
-  const checks = el('checks');
-  const openChecks = checks.querySelector(':scope > details[open]');
-  if (openChecks) openChecks.open = false;
-  checks.classList.remove('expanded');
-  checksExpanded = false;
-  if (sensitivitySelection) {
-    sensitivitySelection = null;
+  const openDetails = el('checks').querySelector(':scope > details[open]');
+  if (openDetails) openDetails.open = false;
+  viewState.checksExpanded = false;
+  if (viewState.sensitivitySelection) {
+    viewState.sensitivitySelection = null;
     renderSensitivities();
   }
-  selection = nextSelection;
-  cellRanges = ranges;
+  viewState.selection = nextSelection;
+  viewState.cellRanges = ranges;
 }
 
 function selectRow(index, focus = false) {
@@ -1092,7 +1134,7 @@ function regionBounds(region) {
 }
 
 function cellRangeBounds() {
-  return cellRanges.map(regionBounds).filter(Boolean);
+  return viewState.cellRanges.map(regionBounds).filter(Boolean);
 }
 
 // Header and spacer rows carry no cells, so a range skips them.
@@ -1135,18 +1177,15 @@ function isMultiCellRange() {
 }
 
 function lastCellRegion() {
-  return cellRanges[cellRanges.length - 1] ?? null;
+  return viewState.cellRanges[viewState.cellRanges.length - 1] ?? null;
 }
 
 function gridCellNode(index, periodIndex) {
-  if (index === COLUMN_AXIS) {
-    const head = el('head');
-    return periodIndex === -1 ? head.firstElementChild : head.querySelector(`[data-column="${periodIndex}"]`);
-  }
-  return el('body').querySelector(`tr[data-row-index="${index}"] [data-column="${periodIndex}"]`);
+  return gridNodes.get(gridKey(index, periodIndex)) ?? null;
 }
 
 function syncGridSelection() {
+  const { selection } = viewState;
   const head = el('head');
   const body = el('body');
   [head, body].forEach((section) => {
@@ -1165,10 +1204,11 @@ function syncGridSelection() {
   const keys = new Set(coordinates.map(({ index, periodIndex }) => gridKey(index, periodIndex)));
   const rowOrder = [COLUMN_AXIS, ...(payload?.rows ?? []).map((row, index) => (row.cells?.length ? index : null))
     .filter((index) => index !== null)];
+  const rowPositions = new Map(rowOrder.map((row, position) => [row, position]));
   for (const { index, periodIndex } of coordinates) {
     const cell = gridCellNode(index, periodIndex);
     if (!cell) continue;
-    const position = rowOrder.indexOf(index);
+    const position = rowPositions.get(index) ?? -1;
     const above = rowOrder[position - 1];
     const below = rowOrder[position + 1];
     cell.classList.add('range-selected');
@@ -1196,7 +1236,7 @@ function syncGridSelection() {
   });
 
   if (selection?.index === COLUMN_AXIS) {
-    head.querySelector(`[data-column="${selection.periodIndex}"]`)?.classList.add('selected');
+    gridCellNode(COLUMN_AXIS, selection.periodIndex)?.classList.add('selected');
     body.querySelectorAll(`td[data-column="${selection.periodIndex}"]`)
       .forEach((cell) => cell.classList.add('selected-column'));
   } else if (selection?.periodIndex === null) {
@@ -1204,12 +1244,11 @@ function syncGridSelection() {
   } else if (validCellCoordinate(selection)) {
     const tr = body.querySelector(`tr[data-row-index="${selection.index}"]`);
     tr?.classList.add('cell-selected');
-    tr?.querySelector(`td[data-column="${selection.periodIndex}"]`)?.classList.add('selected-cell');
-    head.querySelector(`[data-column="${selection.periodIndex}"]`)?.classList.add('cell-selected');
+    gridCellNode(selection.index, selection.periodIndex)?.classList.add('selected-cell');
+    gridCellNode(COLUMN_AXIS, selection.periodIndex)?.classList.add('cell-selected');
   }
 
-  const active = selection?.index === COLUMN_AXIS ? head : body.querySelector(`tr[data-row-index="${selection?.index}"]`);
-  const activeCell = active?.querySelector(`[data-column="${selection?.periodIndex ?? -1}"]`);
+  const activeCell = selection ? gridCellNode(selection.index, selection.periodIndex ?? -1) : null;
   if (activeCell) {
     activeCell.tabIndex = 0;
     activeCell.setAttribute('aria-selected', 'true');
@@ -1229,9 +1268,9 @@ function extendCellRange(index, periodIndex, focus = false) {
   const previous = lastCellRegion();
   const anchor = validCellCoordinate(previous?.anchor)
     ? previous.anchor
-    : validCellCoordinate(selection) ? selection : { index, periodIndex };
+    : validCellCoordinate(viewState.selection) ? viewState.selection : { index, periodIndex };
   selectInGrid(selectionFor({ index, periodIndex }),
-    [...cellRanges.slice(0, -1), { anchor: { ...anchor }, active: { index, periodIndex } }]);
+    [...viewState.cellRanges.slice(0, -1), { anchor: { ...anchor }, active: { index, periodIndex } }]);
   refreshGridSelection();
   if (focus) focusGridCell(index, periodIndex);
 }
@@ -1252,7 +1291,7 @@ function beginCellRangePointer(event, index, periodIndex) {
   enterInspector();
   const cell = event.currentTarget;
   const additive = event.ctrlKey || event.metaKey;
-  const previous = cellRanges.filter(validCellRegion)
+  const previous = viewState.cellRanges.filter(validCellRegion)
     .map((region) => ({ anchor: { ...region.anchor }, active: { ...region.active } }));
   const base = additive ? previous : event.shiftKey ? previous.slice(0, -1) : [];
   const anchor = event.shiftKey && !additive && validCellCoordinate(lastCellRegion()?.anchor)
@@ -1293,8 +1332,8 @@ function beginCellRangePointer(event, index, periodIndex) {
       || coordinate.periodIndex !== region.active.periodIndex)) {
       region.active = coordinate;
       if (committed) {
-        selection = selectionFor(coordinate);
-        cellRanges = [...base, region];
+        viewState.selection = selectionFor(coordinate);
+        viewState.cellRanges = [...base, region];
         syncGridSelection();
       } else {
         commit();
@@ -1346,8 +1385,8 @@ function leaveInspector() {
 }
 
 function clearSelection() {
-  selection = null;
-  cellRanges = [];
+  viewState.selection = null;
+  viewState.cellRanges = [];
   refreshGridSelection();
 }
 
@@ -1357,9 +1396,8 @@ function refreshGridSelection() {
   highlightTableCalculation();
 }
 
-function focusGridCell(index = selection?.index, periodIndex = selection?.periodIndex ?? null) {
-  const row = index === COLUMN_AXIS ? el('head') : el('body').querySelector(`tr[data-row-index="${index}"]`);
-  const cell = row?.querySelector(`[data-column="${periodIndex ?? -1}"]`);
+function focusGridCell(index = viewState.selection?.index, periodIndex = viewState.selection?.periodIndex ?? null) {
+  const cell = gridCellNode(index, periodIndex ?? -1);
   if (!cell) return;
   cell.focus({ preventScroll: true });
   scrollGridCellIntoView(cell);
@@ -1407,7 +1445,7 @@ function scrollGridCellIntoView(cell) {
 function moveSelection(index, direction, edge = false) {
   const next = verticalCellTarget(index, direction, edge);
   if (next === index) return;
-  const periodIndex = selection?.periodIndex ?? null;
+  const periodIndex = viewState.selection?.periodIndex ?? null;
   if (next === COLUMN_AXIS) {
     // Leaving the table upward lands on the column header.
     if (periodIndex !== null) selectColumn(periodIndex, true);
@@ -1420,7 +1458,7 @@ function moveSelection(index, direction, edge = false) {
 }
 
 function movePeriod(index, direction) {
-  const current = selection?.index === index ? selection.periodIndex ?? -1 : -1;
+  const current = viewState.selection?.index === index ? viewState.selection.periodIndex ?? -1 : -1;
   const next = Math.max(-1, Math.min(payload.columns.length - 1, current + direction));
   if (next === current) return;
   if (next === -1) selectRow(index, true);
@@ -1507,7 +1545,7 @@ function handleGridKey(event, index, periodIndex) {
   const key = event.key;
   if (extendCellRangeByKey(event, index, periodIndex)) return;
   const syncSelection = () => {
-    if (selection?.index === index && (selection.periodIndex ?? -1) === periodIndex) return;
+    if (viewState.selection?.index === index && (viewState.selection.periodIndex ?? -1) === periodIndex) return;
     if (periodIndex === -1) selectRow(index, true);
     else inspectCell(index, periodIndex);
   };
@@ -1589,8 +1627,8 @@ function handleHeaderKey(event, periodIndex) {
 }
 
 function selectedSensitivity() {
-  if (sensitivitySelection === null) return null;
-  return (payload.sensitivities ?? []).find((item) => item.name === sensitivitySelection.name) ?? null;
+  if (viewState.sensitivitySelection === null) return null;
+  return (payload.sensitivities ?? []).find((item) => item.name === viewState.sensitivitySelection.name) ?? null;
 }
 
 function sensitivityChartSeries(sensitivity, row, column) {
@@ -1636,41 +1674,91 @@ function chartScale([minimum, maximum], top, bottom) {
   return (value) => top + ((maximum - value) / (maximum - minimum)) * (bottom - top);
 }
 
-function renderSensitivityChart(series, outputLabel, domain) {
-  const width = 360;
-  const y = chartScale(domain, 8, 126);
+function renderBarChart({
+  points,
+  domain,
+  width,
+  height,
+  top,
+  bottom,
+  inset = 0,
+  maxBarWidth,
+  barRatio,
+  minBarHeight = 1,
+  selectedIndex = -1,
+  showMissing = false,
+  svgLabels = false,
+  tooltipAttribute = null,
+  barClass = '',
+  baselineClass = '',
+  preserveAspectRatio = null,
+  ariaLabel
+}) {
+  const y = chartScale(domain, top, bottom);
   const baseline = y(0);
-  const band = width / Math.max(series.values.length, 1);
-  const barWidth = Math.min(34, band * .62);
-  const bars = series.values.map((value, index) => {
-    const center = band * (index + .5);
-    const label = escapeHtml(series.labels[index]);
-    if (value === null) {
-      const selected = index === series.selectedIndex ? ' selected' : '';
+  const band = (width - inset * 2) / Math.max(points.length, 1);
+  const barWidth = Math.min(maxBarWidth, band * barRatio);
+  const bars = points.map((point, index) => {
+    const center = inset + band * (index + .5);
+    const label = escapeHtml(point.label);
+    const selected = index === selectedIndex ? ' selected' : '';
+    if (!Number.isFinite(point.value)) {
+      if (!showMissing) return '';
       return `<g class="sensitivity-chart-missing${selected}"><title>${label}: unavailable</title>` +
         `<line x1="${center - 5}" y1="${baseline - 5}" x2="${center + 5}" y2="${baseline + 5}"></line>` +
         `<line x1="${center + 5}" y1="${baseline - 5}" x2="${center - 5}" y2="${baseline + 5}"></line></g>`;
     }
-    const valueY = y(value);
-    const top = Math.min(valueY, baseline);
-    const height = Math.max(1, Math.abs(baseline - valueY));
-    const selected = index === series.selectedIndex ? ' selected' : '';
-    return `<rect class="sensitivity-chart-bar${selected}" x="${center - barWidth / 2}" y="${top}" ` +
-      `width="${barWidth}" height="${height}" rx="3"><title>${label}: ` +
-      `${escapeHtml(series.displays[index])}</title></rect>`;
+    const valueY = y(point.value);
+    const barTop = Math.min(valueY, baseline);
+    const barHeight = Math.max(minBarHeight, Math.abs(baseline - valueY));
+    const tooltip = `${label}: ${escapeHtml(point.display)}`;
+    const classAttr = barClass ? ` class="${barClass}${selected}"` : '';
+    const rect = `<rect${classAttr} x="${center - barWidth / 2}" y="${barTop}" width="${barWidth}" ` +
+      `height="${barHeight}" rx="3">`;
+    if (tooltipAttribute) {
+      return `<g ${tooltipAttribute}="${tooltip}">${rect}</rect></g>`;
+    }
+    return `${rect}<title>${tooltip}</title></rect>`;
   }).join('');
-  const labels = series.labels.map((label, index) =>
-    `<text x="${band * (index + .5)}" y="148">${escapeHtml(label)}</text>`).join('');
-  const chartLabel = `${outputLabel} by ${series.axisLabel}, ${series.title}`;
+  const labels = svgLabels
+    ? `<g class="sensitivity-chart-labels">${points.map((point, index) =>
+        `<text x="${inset + band * (index + .5)}" y="${height - 10}">${escapeHtml(point.label)}</text>`).join('')}</g>`
+    : '';
+  const aspect = preserveAspectRatio ? ` preserveAspectRatio="${preserveAspectRatio}"` : '';
+  const baseClass = baselineClass ? ` class="${baselineClass}"` : '';
+  return `<svg viewBox="0 0 ${width} ${height}"${aspect} role="img" aria-label="${escapeHtml(ariaLabel)}">` +
+    `<line${baseClass} x1="${inset}" y1="${baseline}" x2="${width - inset}" y2="${baseline}"></line>` +
+    `${bars}${labels}</svg>`;
+}
+
+function renderSensitivityChart(series, outputLabel, domain) {
+  const points = series.values.map((value, index) => ({
+    label: series.labels[index],
+    display: series.displays[index],
+    value: value === null ? NaN : value
+  }));
+  const svg = renderBarChart({
+    points,
+    domain,
+    width: 360,
+    height: 158,
+    top: 8,
+    bottom: 126,
+    maxBarWidth: 34,
+    barRatio: .62,
+    selectedIndex: series.selectedIndex,
+    showMissing: true,
+    svgLabels: true,
+    barClass: 'sensitivity-chart-bar',
+    baselineClass: 'sensitivity-chart-baseline',
+    ariaLabel: `${outputLabel} by ${series.axisLabel}, ${series.title}`
+  });
   return `<figure class="sensitivity-chart"><figcaption><strong>${escapeHtml(series.axisLabel)}</strong>` +
-    `<span>${escapeHtml(series.title)}</span></figcaption>` +
-    `<svg viewBox="0 0 ${width} 158" role="img" aria-label="${escapeHtml(chartLabel)}">` +
-    `<line class="sensitivity-chart-baseline" x1="0" y1="${baseline}" x2="${width}" y2="${baseline}"></line>` +
-    `${bars}<g class="sensitivity-chart-labels">${labels}</g></svg></figure>`;
+    `<span>${escapeHtml(series.title)}</span></figcaption>${svg}</figure>`;
 }
 
 function renderSensitivityPanel(panel, sensitivity) {
-  const { row, column } = sensitivitySelection;
+  const { row, column } = viewState.sensitivitySelection;
   const cell = sensitivity.cells[row][column];
   const assumptions = sensitivity.inputs.map((input, index) => {
     const displayIndex = index === 0 ? column : row;
@@ -1702,18 +1790,13 @@ function cleanClipboardValue(value) {
   return String(value ?? '').replace(/[\t\r\n]+/g, ' ');
 }
 
-function displayedExactValue(cell) {
-  if (cell.exact == null || !cell.contra || Number(cell.exact) === 0) return cell.exact;
-  return cell.exact.startsWith('-') ? cell.exact.slice(1) : `-${cell.exact}`;
-}
-
 function coordinateText(coordinate, exact) {
   const { index, periodIndex } = coordinate;
   if (index === COLUMN_AXIS) return periodIndex === -1 ? '' : payload.columns[periodIndex]?.label ?? '';
   const row = payload.rows[index];
   if (periodIndex === -1) return row.label ?? '';
   const cell = row.cells[periodIndex];
-  return exact ? displayedExactValue(cell) : cell.display;
+  return exact ? (cell.displayExact ?? cell.exact) : cell.display;
 }
 
 function selectedRangeTsv(exact = false) {
@@ -1729,9 +1812,9 @@ function selectedRangeTsv(exact = false) {
 // A selected line or period header has no cell range, so its label stands in.
 function selectedCopyText() {
   if (selectedCoordinates().length) return selectedRangeTsv();
-  if (selection === null) return null;
-  const periodIndex = selection.index === COLUMN_AXIS ? selection.periodIndex : -1;
-  return cleanClipboardValue(coordinateText({ index: selection.index, periodIndex }));
+  if (viewState.selection === null) return null;
+  const periodIndex = viewState.selection.index === COLUMN_AXIS ? viewState.selection.periodIndex : -1;
+  return cleanClipboardValue(coordinateText({ index: viewState.selection.index, periodIndex }));
 }
 
 function handleGridCopy(event) {
@@ -1778,7 +1861,7 @@ function selectedRangeSummary() {
   let numericCount = 0;
   for (const cell of cells) {
     if (cell.exact == null || cell.text) continue;
-    const value = Number(displayedExactValue(cell));
+    const value = Number(cell.displayExact ?? cell.exact);
     if (!Number.isFinite(value)) continue;
     numericCount++;
     const units = cell.units ?? '';
@@ -1834,7 +1917,7 @@ function renderPanel() {
   const sensitivity = selectedSensitivity();
   const rangeSelected = isMultiCellRange();
   const inspector = panel.closest('.inspector');
-  const showInspector = Boolean(entry || sensitivity || rangeSelected) && !checksExpanded;
+  const showInspector = Boolean(entry || sensitivity || rangeSelected) && !viewState.checksExpanded;
   inspector.hidden = !showInspector;
   document.querySelector('.layout').classList.toggle('inspector-hidden', !showInspector);
   el('inspector-back-label').textContent = viewTitle(activeView) ?? 'Table';
@@ -1851,6 +1934,7 @@ function renderPanel() {
     return;
   }
 
+  const { selection } = viewState;
   const cell = selectedCell();
   const alongColumn = selection.index === COLUMN_AXIS;
   const headers = alongColumn
@@ -2002,7 +2086,7 @@ function formulaBoxClass() {
 }
 
 function exactDiffersFromDisplay(cell) {
-  return cell.exact != null && !displayMatchesExact(cell.display, cell.exact, cell.units);
+  return Boolean(cell?.rounded && cell.exact != null);
 }
 
 function renderFormula(formula, expand = false) {
@@ -2130,8 +2214,8 @@ function calculationTokenTitle(token) {
 // The trail belongs to one cell; selecting another starts again at its own calculation.
 function calculationSteps(cell) {
   const key = coordinateKey(cell.line, cell.column);
-  if (calculationTrail.cell !== key) calculationTrail = { cell: key, steps: [] };
-  return calculationTrail.steps;
+  if (viewState.calculationTrail.cell !== key) viewState.calculationTrail = { cell: key, steps: [] };
+  return viewState.calculationTrail.steps;
 }
 
 function currentCalculation(cell) {
@@ -2229,17 +2313,9 @@ function highlightTableCalculation() {
     cell.classList.remove('calculation-source', 'emphasized');
     delete cell.dataset.calcColor;
   });
-  el('body').querySelectorAll('.calculation-result').forEach((cell) => {
-    cell.classList.remove('calculation-result');
-    cell.removeAttribute('title');
-  });
 
   const selected = selectedCell();
-  if (!selected || selected.kind !== 'formula' || !selected.calculation) return;
-
-  cellNodes.get(coordinateKey(selected.line, selected.column))?.classList.add('calculation-result');
-
-  if (!calculationHighlights) return;
+  if (!calculationHighlights || !selected || selected.kind !== 'formula' || !selected.calculation) return;
 
   for (const [key, color] of calculationReferences(currentCalculation(selected)?.calculation)) {
     const cell = cellNodes.get(key);
@@ -2247,18 +2323,6 @@ function highlightTableCalculation() {
     cell.classList.add('calculation-source');
     cell.dataset.calcColor = color;
   }
-}
-
-function displayMatchesExact(display, exact, units = '') {
-  if (display === exact) return true;
-  const { scale, prefix, suffix } = unitFormat(units);
-  let text = display.replaceAll(',', '');
-  const parenthesized = text.startsWith('(') && text.endsWith(')');
-  const negative = parenthesized || text.startsWith('-');
-  if (negative) text = parenthesized ? text.slice(1, -1) : text.slice(1);
-  if (prefix && text.startsWith(prefix)) text = text.slice(prefix.length);
-  if (suffix && text.endsWith(suffix)) text = text.slice(0, -suffix.length);
-  return Number(negative ? `-${text}` : text) === stableNumber(Number(exact) * scale);
 }
 
 function highlightInput(source, active) {
@@ -2362,39 +2426,33 @@ function renderChart(entry, cells, headers) {
   const periodColumns = payload.periodColumns ?? [];
   const points = cells
     .map((cell, index) => ({ cell, label: headers[index]?.label ?? cell.column }))
-    .filter((entry) => periodColumns.includes(entry.cell.column))
-    .map((entry) => ({
-      label: entry.label,
-      display: entry.cell.display,
-      value: entry.cell.exact == null ? NaN : Number(entry.cell.exact)
+    .filter((item) => periodColumns.includes(item.cell.column))
+    .map((item) => ({
+      label: item.label,
+      display: item.cell.display,
+      value: item.cell.exact == null ? NaN : Number(item.cell.exact)
     }));
   const values = points.filter((point) => Number.isFinite(point.value));
   if (values.length < 2) return '';
 
-  const width = 320;
-  const height = 154;
-  const y = chartScale(chartDomain(values.map((point) => point.value)), 12, 146);
-  const baseline = y(0);
-  const slot = (width - 32) / points.length;
-  const barWidth = Math.min(38, slot * .52);
-
-  const bars = points.map((point, index) => {
-    if (!Number.isFinite(point.value)) return '';
-    const barY = point.value >= 0 ? y(point.value) : baseline;
-    const barHeight = Math.max(2, Math.abs(y(point.value) - baseline));
-    const barX = 16 + index * slot + (slot - barWidth) / 2;
-    return `<g data-tooltip="${escapeHtml(point.label)}: ${escapeHtml(point.display)}">
-      <rect x="${barX}" y="${barY}" width="${barWidth}" height="${barHeight}" rx="3"></rect>
-    </g>`;
-  }).join('');
+  const svg = renderBarChart({
+    points,
+    domain: chartDomain(values.map((point) => point.value)),
+    width: 320,
+    height: 154,
+    top: 12,
+    bottom: 146,
+    inset: 16,
+    maxBarWidth: 38,
+    barRatio: .52,
+    minBarHeight: 2,
+    tooltipAttribute: 'data-tooltip',
+    preserveAspectRatio: 'none',
+    ariaLabel: `${entry.label} trend by period`
+  });
   const labels = points.map((point) => `<span>${escapeHtml(point.label)}</span>`).join('');
-
-  return `<div class="trend"><h3>Trend</h3><figure class="trend-chart ${entry.kind}">
-    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(entry.label)} trend by period">
-      <line x1="16" y1="${baseline}" x2="${width - 16}" y2="${baseline}"></line>
-      ${bars}
-    </svg><div class="trend-axis" style="--trend-columns: ${points.length}">${labels}</div>
-  </figure></div>`;
+  return `<div class="trend"><h3>Trend</h3><figure class="trend-chart">` +
+    `${svg}<div class="trend-axis" style="--trend-columns: ${points.length}">${labels}</div></figure></div>`;
 }
 
 const TOOLTIP_DELAY = 200;
@@ -2600,7 +2658,7 @@ function updateExpandAllButton() {
 }
 
 function focusTable() {
-  if (selection !== null) focusGridCell();
+  if (viewState.selection !== null) focusGridCell();
   else el('body').querySelector('[tabindex="0"]')?.focus();
 }
 
@@ -2612,7 +2670,7 @@ function shouldRestoreGridFocus(target, hasSelection, dialogOpen) {
 }
 
 function restoreGridFocusAfterClick(event) {
-  if (!shouldRestoreGridFocus(event.target, selection !== null,
+  if (!shouldRestoreGridFocus(event.target, viewState.selection !== null,
     document.querySelector('dialog[open]') !== null)) return;
   focusGridCell();
 }

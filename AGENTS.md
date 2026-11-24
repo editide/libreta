@@ -46,7 +46,7 @@ Getting this wrong corrupts data, not just display; see [docs/format.md](docs/fo
 
 ## Code
 
-The C# lives in `src/Libreta`; `Api.cs` holds the JSON payloads the page consumes, so change it and `app.js` together.
+The C# lives in `src/Libreta`; `Payloads.cs` holds the JSON payloads the page consumes, so change it and `app.js` together.
 
 The interface is `src/Libreta/wwwroot`: `index.html`, `app.js`, `app.css`.
 Vanilla JavaScript loaded by one `<script>` tag — no modules, no bundler, no npm, and nothing to build.

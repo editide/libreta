@@ -1,177 +1,4 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-
 namespace Libreta;
-
-public static class PayloadJson
-{
-  // Nested calculation expansions run as deep as the formula chain, well past the 64-level default.
-  public static readonly JsonSerializerOptions Options = new JsonSerializerOptions
-  {
-    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    MaxDepth = 512
-  };
-}
-
-/// <summary>One piece of a written-out calculation. Column addresses a cell; Label and ColumnLabel name it.</summary>
-public record CalculationTokenPayload(
-  string Text,
-  string? Dependency,
-  string? Column,
-  string? ColumnLabel = null,
-  string? SourceView = null,
-  CalculationPayload? Expansion = null,
-  string? ExpansionId = null,
-  string? Label = null,
-  string? Missing = null);
-
-public record CalculationPayload(List<CalculationTokenPayload> Tokens);
-
-/// <summary>One written reference: its span in the formula text and the cell it opens.</summary>
-public record FormulaReferencePayload(
-  int Start,
-  int Length,
-  string Line,
-  string? Column,
-  string Label,
-  string Kind,
-  string? SourceView = null,
-  bool Linked = false,
-  string? FormulaId = null);
-
-public record FormulaPayload(string Text, List<FormulaReferencePayload> References);
-
-/// <summary>How a unit scales and decorates a number, so the page can show exact values in the same terms.</summary>
-public record UnitPayload(double Scale, string Prefix, string Suffix);
-
-public record SourceRegionPayload(int X, int Y, int Width, int Height);
-
-public record SourcePayload(
-  string Table,
-  string Url,
-  string Image,
-  SourceRegionPayload? Region,
-  Dictionary<string, string> Details,
-  string? Note);
-
-/// <summary>A rendered cell. <c>Line</c> and <c>Column</c> identify it in any orientation.</summary>
-public record CellPayload(
-  string Line,
-  string Column,
-  string Display,
-  string? Exact,
-  bool Unresolved,
-  string Kind,
-  bool Linked,
-  string Units,
-  FormulaPayload? Formula,
-  CalculationPayload? Calculation,
-  SourcePayload? Source,
-  bool Contra,
-  string? SourceView = null,
-  string? Note = null)
-{
-  public bool Text { get; init; }
-
-  public List<DependentPayload> Dependents { get; init; } = new List<DependentPayload>();
-}
-
-/// <summary>A cell that reads another directly. <c>Hidden</c> means no table shows it; <c>SourceView</c> names one
-/// that does.</summary>
-public record DependentPayload(
-  string Line,
-  string Column,
-  string Label,
-  string ColumnLabel,
-  string Value,
-  string Kind,
-  string? SourceView,
-  bool Hidden);
-
-/// <summary>One cell requested alone (<c>--value</c>), carrying the formula expansions its references need.</summary>
-public record CellDetailPayload(CellPayload Cell, Dictionary<string, FormulaPayload> Formulas);
-
-/// <summary>A column header. <c>Kind</c> tells the page whether the line runs across the row or down the column;
-/// a column that is one line carries the same metadata as a row.</summary>
-public record ColumnPayload
-{
-  public string Label { get; init; } = "";
-  public string Kind { get; init; } = "";
-  public string Name { get; init; } = "";
-  public string Style { get; init; } = "";
-  public string? Note { get; init; }
-  public string? SourceView { get; init; }
-  public FormulaPayload? Formula { get; init; }
-  public SourcePayload? Source { get; init; }
-}
-
-public record RowPayload
-{
-  public string Name { get; init; } = "";
-  public string Label { get; init; } = "";
-  public string Style { get; init; } = "";
-  public string Kind { get; init; } = "";
-  public string? SourceView { get; init; }
-  public int Indent { get; init; }
-  public string Units { get; init; } = "";
-  public List<CellPayload> Cells { get; init; } = new List<CellPayload>();
-  public FormulaPayload? Formula { get; init; }
-  public SourcePayload? Source { get; init; }
-  public string? Note { get; init; }
-}
-
-public record CheckPayload(
-  string Name,
-  string Formula,
-  List<string> Periods,
-  List<string> Deltas,
-  bool Passed,
-  string? Note);
-
-public record SensitivityInputPayload(
-  string Label,
-  string Line,
-  string Column,
-  string? SourceView,
-  string Units,
-  List<double> Values,
-  List<string> Displays);
-
-public record SensitivityCellPayload(
-  string Display,
-  string? Exact,
-  bool Valid,
-  List<double> Inputs,
-  string? UnavailableReason);
-
-public record SensitivityPayload(
-  string Name,
-  string Title,
-  string OutputLabel,
-  string OutputLine,
-  string OutputColumn,
-  string? OutputSourceView,
-  string OutputUnits,
-  List<SensitivityInputPayload> Inputs,
-  List<List<SensitivityCellPayload>> Cells);
-
-public record ViewPayload
-{
-  public string Title { get; init; } = "";
-  public string Subtitle { get; init; } = "";
-  public List<ColumnPayload> Columns { get; init; } = new List<ColumnPayload>();
-  public List<string> PeriodColumns { get; init; } = new List<string>();
-  public List<RowPayload> Rows { get; init; } = new List<RowPayload>();
-  public List<CheckPayload> Checks { get; init; } = new List<CheckPayload>();
-  public List<SensitivityPayload> Sensitivities { get; init; } = new List<SensitivityPayload>();
-  public Dictionary<string, CalculationPayload> Calculations { get; init; } =
-    new Dictionary<string, CalculationPayload>();
-  public Dictionary<string, FormulaPayload> Formulas { get; init; } = new Dictionary<string, FormulaPayload>();
-  public Dictionary<string, UnitPayload> Units { get; init; } = new Dictionary<string, UnitPayload>();
-  public string? Error { get; init; }
-  public long Version { get; init; }
-}
 
 /// <summary>Turns a resolved view into the cell-specific values and provenance the browser needs.</summary>
 public static class PayloadBuilder
@@ -235,7 +62,7 @@ public static class PayloadBuilder
         .Where(column => !view.Book.ColumnFormulas.ContainsKey(column))
         .ToList(),
       Rows = rows,
-      Checks = BuildChecks(view, engine),
+      Checks = BuildChecks(view, engine, null, presentation),
       Sensitivities = BuildSensitivities(view),
       Calculations = presentation.Calculations,
       Formulas = presentation.Formulas,
@@ -308,7 +135,7 @@ public static class PayloadBuilder
     // A cell in other units than its line, such as a growth rate beside amounts, is a different quantity.
     bool contra = cell.Text is null && Contra(lineEntry.Sign, fact) && cell.Units == engine.Units(coordinate.Line);
     string scope = cell.Scope ?? view.Scope;
-    CellLink link = CellLinkFor(view, cell, coordinate.Line);
+    LinkedCell link = LinkedCellFor(view, cell, coordinate.Line);
     CalculationPayload? calculation = cell.Expression is null
       ? null
       : Calculation(view, engine, cell.Expression, scope, coordinate.Line, coordinate.Column, presentation);
@@ -330,6 +157,10 @@ public static class PayloadBuilder
       Paragraphs(new[] { cell.Note, lineNote }.OfType<string>().ToList()))
     {
       Text = cell.Text is not null,
+      Rounded = cell.Text is null && cell.Value is double value && view.Formatter.IsRounded(cell.Units, value),
+      DisplayExact = contra && cell.Text is null && cell.Value is double exactValue && exactValue != 0
+        ? view.Formatter.Exact(cell.Units, -exactValue)
+        : null,
       Dependents = Dependents(view, engine, readers.GetValueOrDefault(coordinate), presentation)
     };
   }
@@ -571,29 +402,42 @@ public static class PayloadBuilder
 
   public static List<CheckPayload> BuildChecks(View view, Engine engine, IEnumerable<Check>? requestedChecks = null)
   {
+    return BuildChecks(view, engine, requestedChecks, null);
+  }
+
+  private static List<CheckPayload> BuildChecks(
+    View view,
+    Engine engine,
+    IEnumerable<Check>? requestedChecks,
+    Presentation? presentation)
+  {
     List<Check> checks = (requestedChecks ?? view.Checks).ToList();
     var payloads = new List<CheckPayload>();
     foreach (Check check in checks)
     {
       List<CheckResult> results = engine.RunChecks(new[] { check });
+      FormulaPayload? expression = presentation is null
+        ? null
+        : Formula(view, engine, check.Text, check.Expression, check.Scope, null, null, presentation,
+          new HashSet<string>());
       payloads.Add(new CheckPayload(
         check.Name,
         check.Text,
         results.Select(result => result.Period).ToList(),
         results.Select(result => result.Delta is null ? "unresolved" : Formatter.Exact(result.Delta.Value)).ToList(),
         results.Count > 0 && results.All(result => result.Passed),
-        check.Note));
+        check.Note,
+        expression));
     }
     return payloads;
   }
 
-  public static CellDetailPayload BuildCell(View view, Engine engine, ResolvedTable table, int row, int column)
+  public static CellPayload BuildCell(View view, Engine engine, ResolvedTable table, int row, int column)
   {
     CellCoordinate coordinate = table.Coordinate(row, column)!.Value;
     var presentation = new Presentation(table.Coordinates(), true);
-    CellPayload cell = Cell(view, engine, table.LineEntry(row, column), coordinate, engine.Cell(coordinate),
+    return Cell(view, engine, table.LineEntry(row, column), coordinate, engine.Cell(coordinate),
       presentation, engine.PresentedReaders());
-    return new CellDetailPayload(cell, presentation.Formulas);
   }
 
   private static bool Contra(string? sign, Fact? fact)
@@ -608,15 +452,15 @@ public static class PayloadBuilder
   }
 
   // A formula that is one cross-scope reference aliases that line. A scope need not present a view, so may have none.
-  private static CellLink CellLinkFor(View view, ResolvedCell cell, string line)
+  private static LinkedCell LinkedCellFor(View view, ResolvedCell cell, string line)
   {
     if (cell.Expression is not RefExpr reference)
     {
-      return new CellLink(false, null, null, null);
+      return new LinkedCell(false, null, null, null);
     }
     string scope = cell.Scope ?? view.Scope;
     string? resolved = view.Book.ResolveSelf(reference.Name, scope, line);
-    string? resolvedScope = resolved is null ? null : ScopeOf(view, resolved);
+    string? resolvedScope = resolved is null ? null : view.Book.ScopeOf(resolved);
     bool linked = resolvedScope is not null && resolvedScope != scope;
     string? column = resolved is null
       ? null
@@ -624,11 +468,11 @@ public static class PayloadBuilder
     string? sourceView = resolved is null || !linked
       ? null
       : view.Book.PresentingView(resolved, column, view.Id, LinkedView(view, resolvedScope, scope));
-    return new CellLink(linked, sourceView, linked ? resolved : null, linked ? column : null);
+    return new LinkedCell(linked, sourceView, linked ? resolved : null, linked ? column : null);
   }
 
   // An alias has no source of its own; it shows the source behind the cell it names.
-  private static SourcePayload? LinkedSource(Engine engine, CellLink link)
+  private static SourcePayload? LinkedSource(Engine engine, LinkedCell link)
   {
     return link.Line is null || link.Column is null
       ? null
@@ -675,7 +519,7 @@ public static class PayloadBuilder
     string referringScope,
     bool shown)
   {
-    string? scope = ScopeOf(view, line);
+    string? scope = view.Book.ScopeOf(line);
     if (scope is null)
     {
       return null;
@@ -696,13 +540,6 @@ public static class PayloadBuilder
   private static string Key(CellCoordinate coordinate)
   {
     return $"{coordinate.Line}\0{coordinate.Column}";
-  }
-
-  private static string? ScopeOf(View view, string name)
-  {
-    return view.Facts.TryGetValue(name, out Fact? fact)
-      ? fact.Scope
-      : view.Formulas.TryGetValue(name, out Formula? formula) ? formula.Scope : null;
   }
 
   public static string Display(View view, ResolvedCell cell, bool contra)
@@ -764,7 +601,7 @@ public static class PayloadBuilder
     string? text,
     Expr? expression,
     string scope,
-    string line,
+    string? line,
     string? column,
     Presentation presentation,
     HashSet<string> path)
@@ -790,7 +627,7 @@ public static class PayloadBuilder
         view.LabelOf(reference.Line),
         LineKind(view, reference.Line),
         sourceView,
-        !shown && (sourceView is not null || ScopeOf(view, reference.Line) != scope),
+        !shown && (sourceView is not null || view.Book.ScopeOf(reference.Line) != scope),
         shown ? null : Expansion(view, engine, reference, presentation, path)));
     }
     return new FormulaPayload(text, references);
@@ -904,12 +741,17 @@ public static class PayloadBuilder
         break;
 
       case RefExpr reference:
-        string dependency = view.Book.ResolveSelf(reference.Name, scope, currentLine) ?? reference.Name;
+        CellCoordinate? coordinate = column is null
+          ? null
+          : view.Book.Coordinate(reference, column, scope, currentLine);
+        string dependency = coordinate?.Line
+          ?? view.Book.ResolveSelf(reference.Name, scope, currentLine)
+          ?? reference.Name;
         tokens.Add(ReferenceToken(
           view,
           engine,
           dependency,
-          view.Book.ReferenceColumn(reference.Column, column, scope, dependency),
+          coordinate?.Column ?? view.Book.ReferenceColumn(reference.Column, column, scope, dependency),
           scope,
           presentation,
           expansionPath));
@@ -1120,7 +962,7 @@ public static class PayloadBuilder
     SourcePayload? Source,
     string? Note);
 
-  private readonly record struct CellLink(bool Linked, string? SourceView, string? Line, string? Column);
+  private readonly record struct LinkedCell(bool Linked, string? SourceView, string? Line, string? Column);
 
 
 }

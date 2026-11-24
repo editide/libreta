@@ -1,13 +1,8 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const test = require('node:test');
-const vm = require('node:vm');
+const { loadApp } = require('./helpers/appHarness');
 
-const app = fs.readFileSync(path.join(__dirname, '..', 'Libreta', 'wwwroot', 'app.js'), 'utf8');
-const coordinatorSource = app.match(/class RequestCoordinator \{[\s\S]*?\n\}/)?.[0];
-assert.ok(coordinatorSource, 'app.js must define RequestCoordinator');
-const RequestCoordinator = vm.runInNewContext(`(${coordinatorSource})`);
+const RequestCoordinator = loadApp().eval('RequestCoordinator');
 
 test('an older view response cannot replace a newer navigation', () => {
   const requests = new RequestCoordinator();

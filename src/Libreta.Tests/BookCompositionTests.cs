@@ -111,12 +111,12 @@ public class BookCompositionTests
     // Arrange
     using var fixture = new CompositionFixture();
     fixture.WriteBook("", "Parent",
-      "units: millions\ncurrency: USD\nfiscal_year_end: December 31\n" +
+      "units: millions\n" +
       "identifiers:\n  project: parent-1\nnavigation: [summary]\nbooks:\n  - id: alpha\n    path: children/alpha");
     fixture.WriteFormula("", "summary", "total", "1");
     fixture.WriteView("", "summary", "total");
     fixture.WriteBook("children/alpha", "Alpha",
-      "units: percent\ncurrency: EUR\nfiscal_year_end: June 30\nnavigation: [analysis]");
+      "units: percent\nnavigation: [analysis]");
     fixture.WriteFacts("children/alpha", "analysis", 7);
     fixture.WriteFormula("children/alpha", "analysis", "doubled", "revenue * 2");
     fixture.WriteView("children/alpha", "analysis", "doubled");
@@ -131,8 +131,6 @@ public class BookCompositionTests
     parent.Identifiers["project"].ShouldBe("parent-1");
     book.Formulas["summary.total"].Units.ShouldBe("millions");
     childFact.Units.ShouldBe("percent");
-    childFact.Currency.ShouldBe("EUR");
-    childFact.FiscalYearEnd.ShouldBe("June 30");
     book.Formulas["alpha::analysis.doubled"].Units.ShouldBe("percent");
   }
 
